@@ -23,12 +23,14 @@ from utils import make_dot, display, smooth_distribution, EPS
 # TODO: set torch seed
 torch.manual_seed(1337)
 
+
 class SBN(nn.Module):
     '''
         Rough and shoddy implementation of a sigmoid belief network.
         It is a single layer SBN
     '''
     eps = EPS
+
     def __init__(self, nx, nz):
         super(SBN, self).__init__()  # Dont remember how exactly this works
         self.nx = nx
@@ -51,7 +53,7 @@ class SBN(nn.Module):
                 variable at that location being 1
                 intended to be a batch_size, n_variables sized FloatTensor
             returns:
-                ns, *(list(d.size())) sized vector - note increase in dimensionality
+                ns, *(list(d.size())) sized vector - note increase in # dims
                     intended to be a (ns, batch_size, n_variables) sized tensor
         '''
         sampler = Bernoulli(d)
@@ -60,7 +62,8 @@ class SBN(nn.Module):
         # return (1 + (torch.sign(sampling_d - e))) / 2
         # return sampling_d.bernoulli()
         # return F.relu(torch.sign(sampling_d - torch.rand(sampling_d.size())))
-        # return F.relu(torch.sign(sampling_d - Variable(torch.rand(sampling_d.size()))))
+        # return F.relu(torch.sign(sampling_d -
+        #                       Variable(torch.rand(sampling_d.size()))))
 
     def x2z(self, x):
         '''
@@ -108,24 +111,35 @@ class SBN(nn.Module):
             '''
             term2 = (q * torch.log(q) + (1 - q) * torch.log(1 - q)).sum()
             # we need probability of samples to compute term1
-            # logq_samples_z = sampler_z.log_prob(samples_z).sum(dim=2)  # S, batch_size
-            logq_samples_z = torch.stack([sampler_z.log_prob(sample_z) for sample_z in samples_z]).sum(dim=2)
+            # logq_samples_z ahead is S, batch_size
+            # logq_samples_z = sampler_z.log_prob(samples_z).sum(dim=2)
+
+            logq_samples_z = torch.stack([
+                sampler_z.log_prob(sample_z)
+                for sample_z in samples_z
+                ]).sum(dim=2)
             #   self.log_bernoulli_probability_of_samples(samples_z, q)
-            pz = F.sigmoid(self.z_bias).expand(S, batch_size, -1)  # S, batch_size, nz
+
+            # pz is S, batch_size, nz
+            pz = F.sigmoid(self.z_bias).expand(S, batch_size, -1)
             z_prior = Bernoulli(pz)
             # logp_samples_z =
             #   self.log_bernoulli_probability_of_samples(samples_z, pz)
-            logp_samples_z = z_prior.log_prob(samples_z).sum(dim=2)  # S, batch_size
+            # logp_samples_z is S, batch_size
+            logp_samples_z = z_prior.log_prob(samples_z).sum(dim=2)
             # logp_xin_given_samples_z =
             #   self.log_bernoulli_probability_given_distributions(xin, ps)
-            logp_xin_given_samples_z = px_given_z.log_prob(xin.expand(S,
-                                                                      batch_size,
-                                                                      self.nx)).sum(dim=2)
+            logp_xin_given_samples_z = px_given_z.log_prob(
+                xin.expand(S, batch_size, self.nx)
+                ).sum(dim=2)
             # pdb.set_trace()
-            logp_xzs = logp_samples_z + logp_xin_given_samples_z  # S, batch_size
+            # logp_xzs is S, batch_size
+            logp_xzs = logp_samples_z + logp_xin_given_samples_z
             # px_given_z = Bernoulli(ps)
-            # logp_x_given_samples_z = px_given_z.log_prob(xouts).sum(dim=2)  # S, batch_size
-            # logp_xzs = logp_samples_z + logp_x_given_samples_z  # S, batch_size
+            # logp_x_given_samples_z is S, batch_size
+            # logp_x_given_samples_z = px_given_z.log_prob(xouts).sum(dim=2)
+            # logp_xzs is S, batch_size
+            # logp_xzs = logp_samples_z + logp_x_given_samples_z
             term1 = self.compute_term1(logq_samples_z, logp_xzs)
             # pdb.set_trace()
             full_elbo = term1 - term2
@@ -137,9 +151,8 @@ class SBN(nn.Module):
         '''
             Does one pass through inference network
             and then one pass through generator
-
-            does so stochastically, i.e., samples from intermediate distribution
-
+            does so stochastically,
+                i.e., samples from intermediate distribution
             distributions are returned for convenience.
         '''
         raise DeprecationWarning
@@ -151,7 +164,9 @@ class SBN(nn.Module):
         # Also need to compute full_elbo and return that too
         return q, sample_z, p, sample_x
 
-    def _deprecated_log_bernoulli_probability_of_samples(self, samples, distribution):
+    def _deprecated_log_bernoulli_probability_of_samples(self,
+                                                         samples,
+                                                         distribution):
         '''
             Returns Pr[samples | distribution]
             ARGS
@@ -164,14 +179,21 @@ class SBN(nn.Module):
         '''
         raise DeprecationWarning
         ns = samples.size()[0]
-        per_sample_distribution = distribution.repeat(ns, *([1]*len(distribution.size())))
+        per_sample_distribution = distribution.repeat(
+            ns, *([1]*len(distribution.size()))
+            )
         # v ~ bernoulli(\Theta) \Rightarrow
         # Pr[v | \Theta] = \Theta^v * (1 - \Theta)^(1 - v)
         # pdb.set_trace()
-        return torch.log(per_sample_distribution.pow(samples) *
-                         (1 - per_sample_distribution).pow(1 - samples)).sum(dim=2)
+        return torch.log(
+            per_sample_distribution.pow(samples) *
+            (1 - per_sample_distribution).pow(1 - samples)
+                         ).sum(dim=2)
 
-    def _deprecated_log_bernoulli_probability_given_distributions(self, sample, distributions):
+    def _deprecated_log_bernoulli_probability_given_distributions(self,
+                                                                  sample,
+                                                                  distributions
+                                                                  ):
         '''
             Essentially returns
                 [Pr[sample | distribution] for distribution in distributions]
@@ -189,8 +211,10 @@ class SBN(nn.Module):
         sample_per_distribution = sample.repeat(nd,
                                                 *([1]*len(sample.size())))
         # pdb.set_trace()
-        return torch.log(distributions.pow(sample_per_distribution) *
-                         (1 - distributions).pow(1 - sample_per_distribution)).sum(dim=2)
+        return torch.log(
+            distributions.pow(sample_per_distribution) *
+            (1 - distributions).pow(1 - sample_per_distribution)
+            ).sum(dim=2)
 
     def compute_term1(self, logq, logp, dim=0):
         '''
@@ -255,31 +279,41 @@ class SBN(nn.Module):
         qzx = self.x2z(xin)  # batch_size, nz
         qzx_smooth = smooth_distribution(qzx)  # batch_size, nz
         # term2 is scalar
-        term2 = (qzx_smooth * torch.log(qzx_smooth) +
-                 (1 - qzx_smooth) * torch.log(1 - qzx_smooth)).repeat(batch_size, 1).sum()
+        term2 = (
+            qzx_smooth * torch.log(qzx_smooth) +
+            (1 - qzx_smooth) * torch.log(1 - qzx_smooth)
+            ).repeat(batch_size, 1).sum()
 
         zs = self.sample_from(qzx_smooth, S)  # S, batch_size, nz sized
         # ugly line follows :D
-        log_qzx_of_zs = self.log_bernoulli_probability_of_samples(zs, qzx_smooth)  # S, batch_size
+        # log_qzx_of_zs is sized S, batch_size
+        log_qzx_of_zs = self.log_bernoulli_probability_of_samples(zs,
+                                                                  qzx_smooth)
         pzs = F.sigmoid(self.z_bias).repeat(batch_size, 1)  # batch_size, nz
         pzs_smooth = smooth_distribution(pzs)  # batch_size, nz
-        log_pz_of_zs = self.log_bernoulli_probability_of_samples(zs, pzs_smooth)  # S, batch_size
+        # log_pz_of_zs is sized S, batch_size
+        log_pz_of_zs = self.log_bernoulli_probability_of_samples(zs,
+                                                                 pzs_smooth)
 
         # pytorch doesnt have function application along a dimension, so...
         px_given_zs = torch.stack([
             self.z2x(zsi) for _, zsi in enumerate(torch.unbind(zs, dim=0))
         ], dim=0)  # S, batch_size, nx ... distribution
         pdb.set_trace()
-        px_given_zs_smooth = smooth_distribution(px_given_zs)  # S, batch_size, nx
+        # px_given_zs_smooth is sized S, batch_size, nx
+        px_given_zs_smooth = smooth_distribution(px_given_zs)
         # Use samples, x to compute p(x, z) and
-        log_px_given_zs_of_xin = self.log_bernoulli_probability_given_distributions(
-            xin,
-            px_given_zs_smooth)  # S, batch_size
+        # log_px_given_zs_of_xin is sized S, batch_size
+        log_px_given_zs_of_xin = \
+            self.log_bernoulli_probability_given_distributions(
+                xin,
+                px_given_zs_smooth)
         log_pxzs = log_px_given_zs_of_xin + log_pz_of_zs  # S, batch_size
         # weighted average them using qzx(z = zs)
         term1 = self.compute_term1(log_qzx_of_zs, log_pxzs)
         # pdb.set_trace()
         return term1 - term2
+
 
 def sanity_test():
     batch_size = 20
@@ -291,7 +325,9 @@ def sanity_test():
         batch_size=batch_size)
 
     test_loader = torch.utils.data.DataLoader(
-        datasets.MNIST('MNIST_data/', train=False, transform=transforms.Compose([
+        datasets.MNIST('MNIST_data/',
+                       train=False,
+                       transform=transforms.Compose([
                            transforms.ToTensor()
                        ])),
         batch_size=batch_size)

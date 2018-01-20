@@ -19,17 +19,20 @@ from torch.distributions import Bernoulli
 from torchvision import datasets, transforms
 from torchvision.utils import make_grid, save_image
 
-from utils import display, make_dot, smooth_distribution, EPS, binary_row_reduce
-
+from utils import display, make_dot
+from utils import smooth_distribution, EPS, binary_row_reduce
 # TODO: set torch seed
 torch.manual_seed(1337)
 
+
 class SBN_Steroids(nn.Module):
     eps = EPS
+
     def __init__(self, nx, nz):
         super(SBN_Steroids, self).__init__()
         self.nx = nx
         self.nz = nz
+
         def sample_range(denom):
             return np.sqrt(6 / denom)
         wr = sample_range(nx + nz)
@@ -39,7 +42,6 @@ class SBN_Steroids(nn.Module):
         self.x_bias = nn.Parameter(torch.rand(nx) * 2 * xr - xr)
         zr = sample_range(nz)
         self.z_bias = nn.Parameter(torch.rand(nz) * 2 * zr - zr)
-
 
     def sample_from(self, d, S):
         '''
@@ -56,6 +58,7 @@ class SBN_Steroids(nn.Module):
         sampler = Bernoulli(d)
         samples = sampler.sample_n(S)
         return samples, sampler
+
     def x2z(self, x):
         '''
             Inference (q(z | x))
@@ -68,6 +71,7 @@ class SBN_Steroids(nn.Module):
                     Pr[Z_i=1 | x]
         '''
         return F.sigmoid(F.linear(x, self.U, self.z_bias))
+
     def z2x(self, z):
         '''
             Generative (p(x  | z))
@@ -102,9 +106,12 @@ class SBN_Steroids(nn.Module):
         ps_list = [smooth_distribution(self.z2x(z)) for z in samples_z]
         ps = torch.stack(ps_list)
         xouts = torch.stack([self.sample_from(psi, 1)[0][0] for psi in ps])
+
         if compute_loss:
             if aggregate_fn is None:
-                aggregate_fn = lambda vars: sum(vars) / len(vars)  # Mean by default
+                def aggregate_fn(vars):
+                    return sum(vars) / len(vars)  # Mean by default
+
             projected_elbos = []
             for t in range(T):
                 sampler_A = Bernoulli(0.5 * torch.ones(k, self.nz))
@@ -118,11 +125,12 @@ class SBN_Steroids(nn.Module):
                 bp = Variable(bp)  # wrap wrap wrap
                 # Implement computeProjectedELBO - pass in whatever it needs.
                 # pdb.set_trace()
-                projected_elbos.append(self.computeProjectedELBO(xin,
-                                                                 samples_z.clone(),
-                                                                 sampler_z,
-                                                                 C,
-                                                                 bp))
+                projected_elbos.append(
+                    self.computeProjectedELBO(xin,
+                                              samples_z.clone(),
+                                              sampler_z,
+                                              C,
+                                              bp))
                 # pdb.set_trace()
             loss = -aggregate_fn(projected_elbos)
         else:
@@ -142,19 +150,30 @@ class SBN_Steroids(nn.Module):
         batch_size = xin.size()[0]
         k, n = C.size()[0], C.size()[1]
         # pdb.set_trace()
-        samples_z[:, :, :k] = (samples_z[:, :, k:].matmul(C[:, k:].t()) + bp) % 2
+        samples_z[:, :, :k] = \
+            (samples_z[:, :, k:].matmul(C[:, k:].t()) + bp) % 2
 
-        logq_zi = torch.stack([sampler_z.log_prob(sample_z) for sample_z in samples_z])  # S, batch_size, nz
-        pz = smooth_distribution(F.sigmoid(self.z_bias).expand(S, batch_size, -1))
+        logq_zi = torch.stack([
+            sampler_z.log_prob(sample_z) for sample_z in samples_z
+            ])  # S, batch_size, nz
+        pz = smooth_distribution(
+            F.sigmoid(self.z_bias).expand(S,
+                                          batch_size,
+                                          -1))
 
         z_prior = Bernoulli(pz)
 
         logp_z = z_prior.log_prob(samples_z)  # S, batch_size, nz
 
         # We need a new px_given_z because the zs have changed.
-        ps = torch.stack([smooth_distribution(self.z2x(sample_z)) for sample_z in samples_z])
+        ps = torch.stack([
+            smooth_distribution(self.z2x(sample_z)) for sample_z in samples_z
+            ])
         px_given_z = Bernoulli(ps)
-        logp_xin_given_samples_z = px_given_z.log_prob(xin.expand(S, batch_size, self.nx)) # S, batch_size, nx
+        # logp_xin_given_samples_z is sized S, batch_size, nx
+        logp_xin_given_samples_z = px_given_z.log_prob(
+            xin.expand(S, batch_size, self.nx)
+            )
 
         logq = logq_zi.sum(dim=2)
         logp = logp_z.sum(dim=2) + logp_xin_given_samples_z.sum(dim=2)
@@ -163,6 +182,7 @@ class SBN_Steroids(nn.Module):
 
         return term1 - term2
         # Note that nothing has been summed up
+
     def compute_term1(self, logq, logp, dim=0):
         '''
             Numerically stable way of computing
@@ -206,6 +226,7 @@ class SBN_Steroids(nn.Module):
         # pdb.set_trace()
         return -1 * (neg_num - pos_den).exp().sum()
 
+
 def sanity_test():
     batch_size = 20
     train_loader = torch.utils.data.DataLoader(
@@ -216,7 +237,9 @@ def sanity_test():
         batch_size=batch_size)
 
     test_loader = torch.utils.data.DataLoader(
-        datasets.MNIST('MNIST_data/', train=False, transform=transforms.Compose([
+        datasets.MNIST('MNIST_data/',
+                       train=False,
+                       transform=transforms.Compose([
                            transforms.ToTensor()
                        ])),
         batch_size=batch_size)
@@ -224,6 +247,7 @@ def sanity_test():
     sbn = SBN_Steroids(784, 200)
     optimizer = optim.SGD(sbn.parameters(), lr=0.001)
     # Quick aggregation function - mean
+
     def mean_fn(ls):
         return sum(ls) / len(ls)
 

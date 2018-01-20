@@ -13,6 +13,7 @@ from torchvision import datasets, transforms
 from torchvision.utils import make_grid, save_image
 EPS = 10**-6
 
+
 def make_dot(var, params=None):
     """ Produces Graphviz representation of PyTorch autograd graph
     Blue nodes are the Variables that require grad, orange are Tensors
@@ -41,7 +42,9 @@ def make_dot(var, params=None):
     def add_nodes(var):
         if var not in seen:
             if torch.is_tensor(var):
-                dot.node(str(id(var)), size_to_str(var.size()), fillcolor='orange')
+                dot.node(str(id(var)),
+                         size_to_str(var.size()),
+                         fillcolor='orange')
             elif hasattr(var, 'variable'):
                 u = var.variable
                 name = param_map[id(u)] if params is not None else ''
@@ -61,7 +64,6 @@ def make_dot(var, params=None):
                     add_nodes(t)
     add_nodes(var.grad_fn)
     return dot
-
 
 
 def smooth_distribution(d, eps=EPS):
@@ -130,6 +132,7 @@ def binary_row_reduce(A, b):
         i += 1
         j += 1
     return C, bp
+
 
 def display(title, img):
     plt.figure()
