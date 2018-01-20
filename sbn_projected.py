@@ -19,11 +19,10 @@ from torch.distributions import Bernoulli
 from torchvision import datasets, transforms
 from torchvision.utils import make_grid, save_image
 
-from utils import display, make_dot, smooth_distribution, EPS
+from utils import display, make_dot, smooth_distribution, EPS, binary_row_reduce
 
 # TODO: set torch seed
 torch.manual_seed(1337)
-EPS = 10**-6
 
 class SBN_Steroids(nn.Module):
     eps = EPS
@@ -35,7 +34,7 @@ class SBN_Steroids(nn.Module):
             return np.sqrt(6 / denom)
         wr = sample_range(nx + nz)
         self.U = nn.Parameter(torch.rand(nz, nx) * 2 * wr - wr)
-        self.V = nn.Parameter(torch.rand(nx, nz) * 2 * wr - wr)
+        # self.V = nn.Parameter(torch.rand(nx, nz) * 2 * wr - wr)
         xr = sample_range(nx)
         self.x_bias = nn.Parameter(torch.rand(nx) * 2 * xr - xr)
         zr = sample_range(nz)
@@ -80,7 +79,7 @@ class SBN_Steroids(nn.Module):
                 p: (nx) sized FloatTensor which represents
                     Pr[X_i=1 | z]
         '''
-        return F.sigmoid(F.linear(z, self.V, self.x_bias))
+        return F.sigmoid(F.linear(z, self.U.t(), self.x_bias))
 
     def forward(self, xin, S=1,
                 compute_loss=True, aggregate_fn=None, k=25, T=30):
@@ -96,6 +95,7 @@ class SBN_Steroids(nn.Module):
                 samples_z
                 ps
                 xouts
+                loss (aggregate_fn(projected_losses))
         '''
         q = smooth_distribution(self.x2z(xin))
         samples_z, sampler_z = self.sample_from(q, S)
@@ -112,16 +112,18 @@ class SBN_Steroids(nn.Module):
                 sampler_b = Bernoulli(0.5 * torch.ones(k))
                 b = sampler_b.sample()
                 # Get C, bp
-                pdb.set_trace()
+                # pdb.set_trace()
                 C, bp = binary_row_reduce(A, b)
+                C = Variable(C)
+                bp = Variable(bp)  # wrap wrap wrap
                 # Implement computeProjectedELBO - pass in whatever it needs.
-                pdb.set_trace()
+                # pdb.set_trace()
                 projected_elbos.append(self.computeProjectedELBO(xin,
                                                                  samples_z.clone(),
                                                                  sampler_z,
                                                                  C,
                                                                  bp))
-                pdb.set_trace()
+                # pdb.set_trace()
             loss = -aggregate_fn(projected_elbos)
         else:
             loss = None
@@ -139,7 +141,7 @@ class SBN_Steroids(nn.Module):
         S = samples_z.size()[0]
         batch_size = xin.size()[0]
         k, n = C.size()[0], C.size()[1]
-
+        # pdb.set_trace()
         samples_z[:, :, :k] = (samples_z[:, :, k:].matmul(C[:, k:].t()) + bp) % 2
 
         logq_zi = torch.stack([sampler_z.log_prob(sample_z) for sample_z in samples_z])  # S, batch_size, nz
@@ -205,7 +207,7 @@ class SBN_Steroids(nn.Module):
         return -1 * (neg_num - pos_den).exp().sum()
 
 def sanity_test():
-    batch_size = 64
+    batch_size = 20
     train_loader = torch.utils.data.DataLoader(
         datasets.MNIST('MNIST_data/', train=True, download=False,
                        transform=transforms.Compose([
@@ -220,12 +222,12 @@ def sanity_test():
         batch_size=batch_size)
 
     sbn = SBN_Steroids(784, 200)
-    optimizer = optim.SGD(sbn.parameters(), lr=0.1)
+    optimizer = optim.SGD(sbn.parameters(), lr=0.001)
     # Quick aggregation function - mean
     def mean_fn(ls):
         return sum(ls) / len(ls)
 
-    for epoch in range(4):
+    for epoch in range(10):
         losses = []
         for _, (data, target) in enumerate(train_loader):
             data = Variable(data.view(-1, 784))  # visible
@@ -233,7 +235,9 @@ def sanity_test():
             data_sample = data.bernoulli()  # xin
             z, z_sample, xp, xp_sample, loss = sbn(data_sample,
                                                    compute_loss=True,
-                                                   aggregate_fn=mean_fn)
+                                                   aggregate_fn=mean_fn,
+                                                   k=5,
+                                                   T=3)
             # pdb.set_trace()
             losses.append(loss.data[0])
             optimizer.zero_grad()
@@ -241,8 +245,8 @@ def sanity_test():
             optimizer.step()
         print('epoch', epoch, 'loss=', np.mean(losses))
 
-    display("real", make_grid(data_sample.view(32, 1, 28, 28).data))
-    display("generate", make_grid(xp_sample[0].view(32, 1, 28, 28).data))
+    display("real", make_grid(data_sample.view(-1, 1, 28, 28).data))
+    display("generate", make_grid(xp_sample[0].view(-1, 1, 28, 28).data))
     plt.show()
 
 

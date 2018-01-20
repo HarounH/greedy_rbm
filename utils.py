@@ -91,6 +91,7 @@ def binary_row_reduce(A, b):
     j = 0
     C = A.clone()
     bp = b.clone()
+    # pdb.set_trace()
     while (i < k) and (j < n):
         # Pick pivot
         if C[i, j] == 0:
@@ -107,12 +108,15 @@ def binary_row_reduce(A, b):
                 continue  # Outer loop. Entire column is zero.
             else:
                 # Swap i, swap_i
-                indices = list(range(k))
-                indices[i], indices[swap_i] = swap_i, i
-                C[indices] = C  # Swapped!
-                bp[indices] = bp  # Swapped!
+                C[[i, swap_i]] = C[[swap_i, i]]
+                bp[[i, swap_i]] = bp[[swap_i, i]]
+                # Dafuq pytorch.
+                # indices = list(range(k))
+                # indices[i], indices[swap_i] = swap_i, i
+                # C[indices] = C  # Swapped!
+                # bp[indices] = bp  # Swapped!
         # Normalize pivot - unnecessary because binary :)
-
+        # assert(C[i, j] == 1)
         # Elimination - preserve binary nature
         for ip in range(k):
             if ip == i:

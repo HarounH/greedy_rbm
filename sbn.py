@@ -18,11 +18,10 @@ from torch.distributions import Bernoulli
 from torchvision import datasets, transforms
 from torchvision.utils import make_grid, save_image
 
-from utils import make_dot
+from utils import make_dot, display, smooth_distribution, EPS
 
 # TODO: set torch seed
 torch.manual_seed(1337)
-EPS = 10**-6
 
 class SBN(nn.Module):
     '''
@@ -34,12 +33,13 @@ class SBN(nn.Module):
         super(SBN, self).__init__()  # Dont remember how exactly this works
         self.nx = nx
         self.nz = nz
+
         def sample_range(denom):
             return np.sqrt(6 / denom)
 
         wr = sample_range(nx + nz)
         self.U = nn.Parameter(torch.rand(nz, nx) * 2 * wr - wr)
-        self.V = nn.Parameter(torch.rand(nx, nz) * 2 * wr - wr)
+        # self.V = nn.Parameter(torch.rand(nx, nz) * 2 * wr - wr)
         xr = sample_range(nx)
         self.x_bias = nn.Parameter(torch.rand(nx) * 2 * xr - xr)
         zr = sample_range(nz)
@@ -74,7 +74,7 @@ class SBN(nn.Module):
             Generator (p)
             return Pr(x=1 | z)
         '''
-        return F.sigmoid(F.linear(z, self.V, self.x_bias))
+        return F.sigmoid(F.linear(z, self.U.t(), self.x_bias))
 
     def forward(self, xin, S=1, compute_loss=True):
         '''
@@ -94,9 +94,9 @@ class SBN(nn.Module):
         batch_size = xin.size()[0]
 
         # Forward passes
-        q = self.smooth_distribution(self.x2z(xin))  # batch_size, nz
+        q = smooth_distribution(self.x2z(xin))  # batch_size, nz
         samples_z, sampler_z = self.sample_from(q, S)  # S, batch_size, nz
-        ps_list = [self.smooth_distribution(self.z2x(sample_z))
+        ps_list = [smooth_distribution(self.z2x(sample_z))
                    for sample_z in samples_z]
         ps = torch.stack(ps_list)  # S, batch_size, nx
         xouts = torch.stack([self.sample_from(p, 1)[0][0]
@@ -118,11 +118,14 @@ class SBN(nn.Module):
             logp_samples_z = z_prior.log_prob(samples_z).sum(dim=2)  # S, batch_size
             # logp_xin_given_samples_z =
             #   self.log_bernoulli_probability_given_distributions(xin, ps)
-            px_given_z = Bernoulli(ps)
             logp_xin_given_samples_z = px_given_z.log_prob(xin.expand(S,
                                                                       batch_size,
                                                                       self.nx)).sum(dim=2)
-            logp_xzs = logp_samples_z + logp_xin_given_samples_z  # S, batch_size, 1
+            # pdb.set_trace()
+            logp_xzs = logp_samples_z + logp_xin_given_samples_z  # S, batch_size
+            # px_given_z = Bernoulli(ps)
+            # logp_x_given_samples_z = px_given_z.log_prob(xouts).sum(dim=2)  # S, batch_size
+            # logp_xzs = logp_samples_z + logp_x_given_samples_z  # S, batch_size
             term1 = self.compute_term1(logq_samples_z, logp_xzs)
             # pdb.set_trace()
             full_elbo = term1 - term2
@@ -189,15 +192,6 @@ class SBN(nn.Module):
         return torch.log(distributions.pow(sample_per_distribution) *
                          (1 - distributions).pow(1 - sample_per_distribution)).sum(dim=2)
 
-    def smooth_distribution(self, d, eps=EPS):
-        '''
-            Used to convert probability distributions from range 0,1
-                to eps, 1 - eps
-            Takes a vector in range [lo, hi]
-            and converts it into range [eps + lo*(1 - 2*eps), eps + hi*(1 - 2*eps)]
-        '''
-        return d * (1 - 2*eps) + eps
-
     def compute_term1(self, logq, logp, dim=0):
         '''
             Numerically stable way of computing
@@ -259,7 +253,7 @@ class SBN(nn.Module):
 
         # qzx and second term computation
         qzx = self.x2z(xin)  # batch_size, nz
-        qzx_smooth = self.smooth_distribution(qzx)  # batch_size, nz
+        qzx_smooth = smooth_distribution(qzx)  # batch_size, nz
         # term2 is scalar
         term2 = (qzx_smooth * torch.log(qzx_smooth) +
                  (1 - qzx_smooth) * torch.log(1 - qzx_smooth)).repeat(batch_size, 1).sum()
@@ -268,7 +262,7 @@ class SBN(nn.Module):
         # ugly line follows :D
         log_qzx_of_zs = self.log_bernoulli_probability_of_samples(zs, qzx_smooth)  # S, batch_size
         pzs = F.sigmoid(self.z_bias).repeat(batch_size, 1)  # batch_size, nz
-        pzs_smooth = self.smooth_distribution(pzs)  # batch_size, nz
+        pzs_smooth = smooth_distribution(pzs)  # batch_size, nz
         log_pz_of_zs = self.log_bernoulli_probability_of_samples(zs, pzs_smooth)  # S, batch_size
 
         # pytorch doesnt have function application along a dimension, so...
@@ -276,7 +270,7 @@ class SBN(nn.Module):
             self.z2x(zsi) for _, zsi in enumerate(torch.unbind(zs, dim=0))
         ], dim=0)  # S, batch_size, nx ... distribution
         pdb.set_trace()
-        px_given_zs_smooth = self.smooth_distribution(px_given_zs)  # S, batch_size, nx
+        px_given_zs_smooth = smooth_distribution(px_given_zs)  # S, batch_size, nx
         # Use samples, x to compute p(x, z) and
         log_px_given_zs_of_xin = self.log_bernoulli_probability_given_distributions(
             xin,
@@ -287,15 +281,8 @@ class SBN(nn.Module):
         # pdb.set_trace()
         return term1 - term2
 
-
-def display(title, img):
-    plt.figure()
-    npimg = np.transpose(img.numpy(), (1, 2, 0))
-    plt.imshow(npimg)
-    plt.title(title)
-
 def sanity_test():
-    batch_size = 64
+    batch_size = 20
     train_loader = torch.utils.data.DataLoader(
         datasets.MNIST('MNIST_data/', train=True, download=False,
                        transform=transforms.Compose([
@@ -312,7 +299,7 @@ def sanity_test():
     sbn = SBN(784, 200)
     optimizer = optim.SGD(sbn.parameters(), lr=0.1)
 
-    for epoch in range(4):
+    for epoch in range(5):
         losses = []
         for _, (data, target) in enumerate(train_loader):
             data = Variable(data.view(-1, 784))  # visible
@@ -329,8 +316,8 @@ def sanity_test():
             optimizer.step()
         print('epoch', epoch, 'loss=', np.mean(losses))
 
-    display("real", make_grid(data_sample.view(32, 1, 28, 28).data))
-    display("generate", make_grid(xp_sample[0].view(32, 1, 28, 28).data))
+    display("real", make_grid(data_sample.view(-1, 1, 28, 28).data))
+    display("generate", make_grid(xp_sample[0].view(-1, 1, 28, 28).data))
     plt.show()
 
 
