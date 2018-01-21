@@ -14,6 +14,10 @@ from torchvision.utils import make_grid, save_image
 EPS = 10**-6
 
 
+def sample_range(denom):
+    return np.sqrt(6 / denom)
+
+
 def make_dot(var, params=None):
     """ Produces Graphviz representation of PyTorch autograd graph
     Blue nodes are the Variables that require grad, orange are Tensors
@@ -134,6 +138,49 @@ def binary_row_reduce(A, b):
     return C, bp
 
 
+def weighted_average_logsumexp(logq, logp):
+    '''
+        Numerically stable way of computing
+            [ \Sigma q * log(p) ]/ [ \Sigma q ]
+            (along dimension 0 for now)
+
+        given logq, logp
+            everything is negative
+
+        operations have to be independent of dim=1, dim=2
+
+        everything will have to be done in logspace
+        num = \Sigma q * log(p)
+        den = \Sigma q
+
+        need to compute num / den => torch.log(num / den).exp() would do
+        torch.log(-num) is doable
+        torch.log(den) is doable
+        torch.log(num) is NOT doable
+        -1 * (torch.log(-num) - torch.log(den)).exp() provides hope
+
+        ARGS
+        ----
+        logq : S, batch_size
+        logp : S, batch_size
+
+        RETURNS
+        ----
+        [ \Sigma q * log(p) ]/ [ \Sigma q ]
+    '''
+    S, batch_size = logq.size()[0], logq.size()[1]
+    # pdb.set_trace()
+    logq_max = logq.max(dim=0)[0]  # 1, batch_size, 1
+    logq_max_expanded = logq_max.expand(S, batch_size)
+    # numerator part
+    neg_num = logq_max + \
+        torch.log(((logq - logq_max_expanded).exp() * (-logp)).sum(dim=0))
+    # pdb.set_trace()
+    # denominator part
+    pos_den = logq_max + \
+        torch.log((logq - logq_max_expanded).exp().sum(dim=0))
+    # pdb.set_trace()
+    return -1 * (neg_num - pos_den).exp().sum()
 def display(title, img):
     plt.figure()
     npimg = np.transpose(img.numpy(), (1, 2, 0))

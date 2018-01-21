@@ -1,5 +1,5 @@
 '''
-  File to make a SBN and a DBN, trained using VMCS Steroids
+  File to make a SBN, trained using VMCS Steroids
   http://cs.stanford.edu/~ermon/papers/variational_nips2016.pdf
 '''
 
@@ -211,6 +211,7 @@ class SBN_Steroids(nn.Module):
 
             RETURNS
             ----
+            [ \Sigma q * log(p) ]/ [ \Sigma q ]
         '''
         S, batch_size = logq.size()[0], logq.size()[1]
         # pdb.set_trace()

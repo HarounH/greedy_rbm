@@ -1,5 +1,5 @@
 '''
-  File to make a SBN and a DBN
+  File to make a SBN
 '''
 
 __author__ = 'haroun habeeb'
