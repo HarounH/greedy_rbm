@@ -224,7 +224,7 @@ class SBN_Steroids(nn.Module):
         # denominator part
         pos_den = logq_max + \
             torch.log((logq - logq_max_expanded).exp().sum(dim=0))
-        # pdb.set_trace()
+
         return -1 * (neg_num - pos_den).exp().sum()
 
 

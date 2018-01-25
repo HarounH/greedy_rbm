@@ -181,8 +181,80 @@ def weighted_average_logsumexp(logq, logp):
         torch.log((logq - logq_max_expanded).exp().sum(dim=0))
     # pdb.set_trace()
     return -1 * (neg_num - pos_den).exp().sum()
+
+
+def compute_elbo_sampled_batched(logp, logq):
+    '''
+        Numerically stable computation of
+        \Sigma_batches ((\Sigma_i q[i] log(p[i]) - log(q[i])) / (\Sigma_i q[i]))
+    '''
+    (S, bs) = list(logq.size())
+    logq_max = logq.max(dim=0)[0]  # 1, bs
+    logq_max_expanded = logq_max.expand(S, bs)  # S, bs
+    inner_weight = (logq - logq_max_expanded).exp()
+
+    # Thr following are 1, bs
+    term1_num = logq_max + torch.log((inner_weight * (-logp)).sum(dim=0))
+    term2_num = logq_max + torch.log((inner_weight * (-logq)).sum(dim=0))
+    # num = (term1_num - term2_num)  # UNSTABLE
+    den = logq_max + torch.log(inner_weight.sum(dim=0))
+    return -1 * (term1_num - den).exp().sum() + (term2_num - den).exp().sum()
+
+
 def display(title, img):
     plt.figure()
     npimg = np.transpose(img.numpy(), (1, 2, 0))
     plt.imshow(npimg)
     plt.title(title)
+
+
+def glorot_init(param):
+    '''
+        ARGS
+        ----
+            param: receives a paramater of some size, initialized unformly in [0, 1]
+    '''
+    denom = sum(list(param.size()))
+    r = np.sqrt(6 / denom)
+    return param * 2 * r - r
+
+
+'''
+    For the next 2 functions, checkpoints are states of model, optimizer essentially
+'''
+
+def save_checkpoint(state, filename, is_best=False, best_filename='models/best.pytorch.tar'):
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, best_filename)
+
+def load_checkpoint(filename):
+    return torch.load(filename)
+
+
+def every(epoch, stride=5, start=-1):
+    '''
+        Function is true for every stideth epoch
+    '''
+    if start == -1:
+        start = stride - 1
+    return epoch % stride == start
+
+'''
+    The following code has problems.
+'''
+
+
+def _incorrect_compute_elbo(logp, logq):
+    '''
+        Compute \Sigma q * [logp - logq] / \Sigma q
+    '''
+    logq_max = logq.max().expand(logq.size())
+    num_te1 = (logq_max +
+               torch.log((logq - logq_max).exp() * (-logp))).sum(dim=0)
+    num_te2 = (logq_max +
+               torch.log((logq - logq_max).exp() * (-logq))).sum(dim=0)
+    neg_num = num_te1 - num_te2
+    pos_den = (logq_max +
+               torch.log((logq - logq_max).exp())).sum(dim=0)
+    return -1 * (neg_num - pos_den).exp().sum()

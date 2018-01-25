@@ -201,6 +201,7 @@ class SBN_Greedy(nn.Module):
             set_constants(constants, list(range(self.nz)), p.expand(1, 1, -1))
             z_prior = Bernoulli(p.squeeze())
             logps = z_prior.log_prob(constants.squeeze())
+            raise NotImplementedError('Greedy projection uses wrong variables')
             Z_f_indices = logps.topk(k)[1].data.tolist()
             # Z_f_c_indices is common to if else thingy
         Z_f_c_indices = list(set(range(self.nz)) - set(Z_f_indices))
