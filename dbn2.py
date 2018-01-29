@@ -64,20 +64,25 @@ class DBN(nn.Module):
     eps = EPS
 
     def __init__(self, nx, nzs, mode='vanilla'):
-        raise DeprecationWarning('Use dnb2 instead!!!')
-        exit()
         super(DBN, self).__init__()
         self.mode = mode
         self.L = len(nzs)
         self.nx = nx
         self.nzs = nzs
-        self.W = nn.ParameterList([nn.Parameter(glorot_init(torch.rand(nx, nzs[0])))])
-        self.bp = nn.ParameterList([nn.Parameter(glorot_init(torch.rand(nx)))])
-        self.bq = nn.ParameterList([nn.Parameter(glorot_init(torch.rand(nzs[0])))])
+        self.W = [nn.Parameter(glorot_init(torch.rand(nx, nzs[0])))]
+        self.V = [nn.Parameter(glorot_init(torch.rand(nx, nzs[0])))]
+        self.bp = [nn.Parameter(glorot_init(torch.rand(nx)))]
+        self.bq = [nn.Parameter(glorot_init(torch.rand(nzs[0])))]
         for l in range(1, self.L):
+            self.W.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1], nzs[l]))))
             self.W.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1], nzs[l]))))
             self.bp.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1]))))
             self.bq.append(nn.Parameter(glorot_init(torch.rand(nzs[l]))))
+
+    def q_parameters(self):
+        return self.V + self.bq
+    def p_parameters(self):
+        return self.W + self.bp
 
     def generate(self, z_Lm1, S=1, smooth_eps=eps, n_constraints=25, T=3):
         if self.mode == 'greedy':
@@ -288,7 +293,8 @@ class DBN(nn.Module):
         samplers = [None]  # Welp
         for l in range(self.L):  # l is being inferred
             q = smooth_distribution(
-                F.sigmoid(F.linear(samples[-1], self.W[l].t(), self.bq[l])),
+                # F.sigmoid(F.linear(samples[-1], self.W[l].t(), self.bq[l])),
+                F.sigmoid(F.linear(samples[-1], self.V[l].t(), self.bq[l])), # TODO: Revert to W
                 eps=smooth_eps
             )
             samplers.append(Bernoulli(q))
@@ -336,7 +342,7 @@ class DBN(nn.Module):
             bp = Variable(bp)
             # Sample z from q and then impose constraints
             q = smooth_distribution(
-                F.sigmoid(F.linear(sample[-1], self.W[0].t(), self.bq[0])),
+                F.sigmoid(F.linear(sample[-1], self.V[0].t(), self.bq[0])),
                 eps=smooth_eps
             )
             sampler.append(Bernoulli(q))
@@ -362,7 +368,7 @@ class DBN(nn.Module):
         samples = [xin.expand(S, *xin.size())]
         samplers = [None]
         q = smooth_distribution(
-            F.sigmoid(F.linear(samples[0], self.W[0].t(), self.bq[0])),
+            F.sigmoid(F.linear(samples[0], self.V[0].t(), self.bq[0])),
             eps=smooth_eps
         )
         samplers.append(Bernoulli(q))
@@ -537,7 +543,7 @@ class DBN(nn.Module):
             logq = []
             for l in range(self.L):  # 0, 1, 2, ...Lm1
                 q = smooth_distribution(
-                    F.sigmoid(F.linear(q_samples[l], self.W[l].t(), self.bq[l])),
+                    F.sigmoid(F.linear(q_samples[l], self.V[l].t(), self.bq[l])),
                     eps=smooth_eps
                 )  # S, bs, nzs[l + 1]
                 logq.append(Bernoulli(q).log_prob(q_samples[l + 1]).sum(dim=2))
@@ -578,8 +584,11 @@ if __name__ == '__main__':
                        ])),
         batch_size=batch_size)
 
-    dbn = DBN(784, [200], mode='greedy')
-    optimizer = optim.SGD(dbn.parameters(), lr=0.1)
+    dbn = DBN(784, [200], mode='vanilla')
+    pdb.set_trace()
+    param_groups = [{'params': dbn.q_parameters(), 'lr': 0.6e-4},
+                    {'params': dbn.p_parameters(), 'lr': 3e-4}]
+    optimizer = optim.Adam(param_groups)
 
     for epoch in range(5):
         losses = []
