@@ -22,7 +22,7 @@ from torch.distributions import Bernoulli
 from torchvision import datasets, transforms
 from torchvision.utils import make_grid, save_image
 
-from utils import make_dot, display, smooth_distribution, EPS, sample_range, \
+from utils import display, smooth_distribution, EPS, sample_range, \
     compute_elbo_sampled_batched, glorot_init
 
 from utils import save_checkpoint, load_checkpoint, every
