@@ -19,8 +19,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.distributions import Bernoulli
-from torchvision import datasets, transforms
-from torchvision.utils import make_grid, save_image
+
 
 from utils import display, smooth_distribution, EPS, sample_range, \
     compute_elbo_sampled_batched, glorot_init
@@ -116,6 +115,8 @@ def get_nips_data(batch_size, loc='nips_data/'):
 
 
 if __name__ == '__main__':
+    from torchvision import datasets, transforms
+    from torchvision.utils import make_grid, save_image
     parser = argparse.ArgumentParser()
     parser.add_argument('--train',
                         type=bool,
@@ -149,7 +150,7 @@ if __name__ == '__main__':
         # pdb.set_trace()
         os.mkdir(os.path.dirname(MODELS_DIR))
 
-    pdb.set_trace()
+    # pdb.set_trace()
     # Data loading
     batch_size = 20
     if args.dataset == 'mnist':
@@ -254,7 +255,7 @@ if __name__ == '__main__':
             random_elbos.append(dbn.evaluate_sample(q_sample_T_random, p_sample_T_random))
             # print(' rl', end='')
             # print(vanilla_elbos[-1], greedy_elbos[-1], random_elbos[-1])
-        pdb.set_trace()
+        # pdb.set_trace()
         all_elbos = {'vanilla': vanilla_elbos, 'greedy': greedy_elbos, 'random': random_elbos}
         with open(MODELS_DIR + date_str + '.elbos.pickle', 'wb') as f:
             pickle.dump(all_elbos, f)

@@ -7,7 +7,7 @@ __mail__ = 'haroun7@gmail.com'
 
 import pdb
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import torch
 import torch.utils.data
 import torch.nn as nn
@@ -15,9 +15,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.distributions import Bernoulli
-from torchvision import datasets, transforms
-from torchvision.utils import make_grid, save_image
-from utils import make_dot, display, smooth_distribution, EPS, sample_range, \
+# from torchvision import datasets, transforms
+# from torchvision.utils import make_grid, save_image
+from utils import smooth_distribution, EPS, sample_range, \
     compute_elbo_sampled_batched, glorot_init, binary_row_reduce
 
 
@@ -562,6 +562,10 @@ class DBN(nn.Module):
         return elbos
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    from torchvision import datasets, transforms
+    from torchvision.utils import make_grid, save_image
+    from visualize import make_dot, display
     batch_size = 20
     train_loader = torch.utils.data.DataLoader(
         datasets.MNIST('MNIST_data/', train=True, download=False,
