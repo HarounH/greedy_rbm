@@ -21,7 +21,7 @@ from torch.autograd import Variable
 from torch.distributions import Bernoulli
 
 
-from utils import display, smooth_distribution, EPS, sample_range, \
+from utils import smooth_distribution, EPS, sample_range, \
     compute_elbo_sampled_batched, glorot_init
 
 from utils import save_checkpoint, load_checkpoint, every
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     # Make the directory if it doesn't exist.
     if not os.path.exists(os.path.dirname(MODELS_DIR)):
         # pdb.set_trace()
-        os.mkdir(os.path.dirname(MODELS_DIR))
+        os.makedirs(os.path.dirname(MODELS_DIR))
 
     # pdb.set_trace()
     # Data loading
