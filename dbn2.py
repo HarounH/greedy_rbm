@@ -62,7 +62,7 @@ class DBN(nn.Module):
     '''
     eps = EPS
 
-    def __init__(self, nx, nzs, mode='vanilla'):
+    def __init__(self, nx, nzs, mode='vanilla', ncs=25, T=3):
         super(DBN, self).__init__()
         self.mode = mode
         self.L = len(nzs)
@@ -77,13 +77,18 @@ class DBN(nn.Module):
             self.W.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1], nzs[l]))))
             self.bp.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1]))))
             self.bq.append(nn.Parameter(glorot_init(torch.rand(nzs[l]))))
-
+        self.ncs=ncs
+        self.T=T
     def q_parameters(self):
         return self.V + self.bq
     def p_parameters(self):
         return self.W + self.bp
 
-    def generate(self, z_Lm1, S=1, smooth_eps=eps, n_constraints=25, T=3):
+    def generate(self, z_Lm1, S=1, smooth_eps=eps, n_constraints=None, T=None):
+        if n_constraints is None:
+            n_constraints = self.ncs
+        if T is None:
+            T = self.T
         if self.mode == 'greedy':
             return self.greedy_generate(z_Lm1,
                                         S=S,
@@ -259,7 +264,11 @@ class DBN(nn.Module):
         Z_f_indices = list(set(range(nz)) - set(Z_f_c_indices))
         return Z_f_indices, Z_f_c_indices
 
-    def inference(self, xin, S=1, smooth_eps=eps, n_constraints=25, T=3):
+    def inference(self, xin, S=1, smooth_eps=eps, n_constraints=None, T=None):
+        if n_constraints is None:
+            n_constraints = self.ncs
+        if T is None:
+            T = self.T
         if self.mode == 'greedy':
             return self.greedy_inference(xin,
                                          S=S,
@@ -378,7 +387,11 @@ class DBN(nn.Module):
         samples.append(new_sample)
         return samples, samplers, Z_f_indices, Z_f_c_indices, constants
 
-    def forward(self, xin_dist, compute_loss=True, S=5, n_constraints=5, T=3, aggregate_fn=None):
+    def forward(self, xin_dist, compute_loss=True, S=5, n_constraints=None, T=None, aggregate_fn=None):
+        if n_constraints is None:
+            n_constraints = self.ncs
+        if T is None:
+            T = self.T
         if self.mode == 'vanilla':
             return self.vanilla_forward(xin_dist,
                                         compute_loss=compute_loss,

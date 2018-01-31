@@ -171,6 +171,14 @@ if __name__ == '__main__':
     parser.add_argument('--model_folder',
                         type=str,
                         default='models/')
+    parser.add_argument('-k', '--ncs',
+                        type=int,
+                        default=25,
+                        help='number of constraints')
+    parser.add_argument('-T', '--timesteps',
+                        type=int,
+                        default=3,
+                        help='number of time steps for random projections')
     args = parser.parse_args()
     MODELS_DIR = args.model_folder
     # Make the directory if it doesn't exist.
@@ -196,7 +204,7 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError
 
-    dbn = DBN(nx, [nz])
+    dbn = DBN(nx, [nz], mode=args.mode, ncs=args.ncs, T=args.timesteps)
     dbn.mode = args.mode
     param_groups = [{'params': dbn.q_parameters(), 'lr': 0.6e-4},
                     {'params': dbn.p_parameters(), 'lr': 3e-4}]
@@ -229,14 +237,16 @@ if __name__ == '__main__':
                 loss.backward()
                 optimizer.step()
             print('epoch', epoch, 'loss=', np.mean(losses))
-            if every(epoch, stride=5):
+            if every(epoch, stride=5, start=1):
                 save_checkpoint({'epoch': epoch,
                                  'model': dbn.state_dict(),
                                  'optimizer': optimizer.state_dict()},
                                 os.path.join(MODELS_DIR,
-                                             date_str + '.' + dbn.mode + '.' + str(epoch) + '.pytorch.tar'))
+                                             date_str + '.' + dbn.mode +
+                                             '.' + str(dbn.ncs) + '.' + str(dbn.T) +
+                                             '.' + str(epoch) + '.pytorch.tar'))
                 print('Saved model on epoch', epoch)
-
+    original_mode = args.mode
     if args.test is True:
         print('Started testing')
         vanilla_elbos = []
@@ -284,5 +294,8 @@ if __name__ == '__main__':
             # print(vanilla_elbos[-1], greedy_elbos[-1], random_elbos[-1])
         # pdb.set_trace()
         all_elbos = {'vanilla': vanilla_elbos, 'greedy': greedy_elbos, 'random': random_elbos}
-        with open(MODELS_DIR + date_str + '.elbos.pickle', 'wb') as f:
+        with open(MODELS_DIR +
+                  date_str + '.' + original_mode +
+                  '.' + str(dbn.ncs) + '.' + str(dbn.T) +
+                  '.' + str(epoch) + '.elbos.pickle', 'wb') as f:
             pickle.dump(all_elbos, f)
