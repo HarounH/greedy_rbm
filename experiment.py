@@ -40,6 +40,7 @@ class CaltechDataset(torch.utils.data.Dataset):
         '''
             images: Tensor of size N, nx
         '''
+        super(CaltechDataset, self).__init__()
         self.images = images.float()
         self.n, self.nx = images.size()
 
@@ -49,6 +50,19 @@ class CaltechDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         # pdb.set_trace()
         return self.images[idx], 0
+
+
+class NIPSDataset(torch.utils.data.Dataset):
+    def __init__(self, counts, words=None):
+        super(NIPSDataset, self).__init__()
+        self.counts = counts / counts.sum(dim=1, keepdim=True)
+        self.n, self.nx = counts.size()
+        self.words = words
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, idx):
+        return self.counts[idx], 0
 
 def get_mnist_data(batch_size, loc):
     '''
@@ -109,9 +123,23 @@ def get_nips_data(batch_size, loc='nips_data/'):
             testing
     '''
     print('Loading NIPS data')
+    # pdb.set_trace()
     mat = loadmat(loc + 'nips_1-17.mat')
-    pdb.set_trace()
-    return train_loader, val_loader, test_loader
+    # pdb.set_trace()
+    nd, nw = mat['counts'].shape
+    train_start = 0
+    train_end = int(0.8 * nd)
+    val_end = int(0.9 * nd)
+    train = NIPSDataset(torch.from_numpy(mat['counts'][train_start:train_end].todense()).float(),
+                        mat['words'])
+    val = NIPSDataset(torch.from_numpy(mat['counts'][train_end:val_end].todense()).float(),
+                      mat['words'])
+    test = NIPSDataset(torch.from_numpy(mat['counts'][val_end:].todense()).float(),
+                       mat['words'])
+    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size)
+    val_loader = torch.utils.data.DataLoader(val, batch_size=batch_size)
+    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size)
+    return train_loader, val_loader, test_loader, nw
 
 
 if __name__ == '__main__':
@@ -162,10 +190,9 @@ if __name__ == '__main__':
         nx = 28 * 28
         nz = 200
     elif args.dataset == 'nips_data':
-        train_loader, val_loader, test_loader = get_nips_data(batch_size, 'caltech101/')
-        nx = -1
-        nz = -1
-        raise NotImplementedError
+        train_loader, val_loader, test_loader, nx = get_nips_data(batch_size, 'nips_data/')
+        # nx is returned.
+        nz = 200
     else:
         raise NotImplementedError
 
@@ -190,7 +217,7 @@ if __name__ == '__main__':
         for epoch in range(start_epoch, start_epoch + args.n_epochs):
             losses = []
             for _, (data, target) in enumerate(train_loader):
-                data = Variable(data.view(-1, 784))  # visible
+                data = Variable(data.view(-1, nx))  # visible
                 data_sample, q, q_sample, p, p_sample, loss = dbn(
                     data,
                     compute_loss=True
@@ -217,7 +244,7 @@ if __name__ == '__main__':
         greedy_elbos = []
         for mbi, (data, target) in enumerate(test_loader):
             print('mb ', mbi)
-            data = Variable(data.view(-1, 784))  # visible
+            data = Variable(data.view(-1, nx))  # visible
             # Get samples from all 3 modes
             dbn.mode = 'vanilla'
             S=20
