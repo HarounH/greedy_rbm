@@ -26,12 +26,12 @@ from utils import smooth_distribution, EPS, sample_range, \
 
 from utils import save_checkpoint, load_checkpoint, every
 
-from dbn2 import DBN
+from dbn2 import DBN, evaluate_perplexity
 
 
 torch.manual_seed(1337)
 
-MODELS_DIR = 'models/'
+
 date_str = '1.28.2018'
 
 
@@ -179,12 +179,20 @@ if __name__ == '__main__':
                         type=int,
                         default=3,
                         help='number of time steps for random projections')
+    parser.add_argument('--perplexity',
+                        type=bool,
+                        default=False,
+                        help='Should testing be using perplexity instead of ELBO')
+    parser.add_argument('-S', '--nS',
+                        type=int,
+                        default=20,
+                        help='number of samples to use per random projection.')
     args = parser.parse_args()
-    MODELS_DIR = args.model_folder
+    args.model_folder = args.model_folder
     # Make the directory if it doesn't exist.
-    if not os.path.exists(os.path.dirname(MODELS_DIR)):
+    if not os.path.exists(os.path.dirname(args.model_folder)):
         # pdb.set_trace()
-        os.makedirs(os.path.dirname(MODELS_DIR))
+        os.makedirs(os.path.dirname(args.model_folder))
 
     # pdb.set_trace()
     # Data loading
@@ -211,7 +219,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(param_groups)
     if args.resume:
         # Load model etc
-        checkpoint = load_checkpoint(args.checkpoint_file)
+        checkpoint = load_checkpoint(os.path.join(args.model_folder, args.checkpoint_file))
         start_epoch = checkpoint['epoch']
         dbn.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
@@ -241,7 +249,7 @@ if __name__ == '__main__':
                 save_checkpoint({'epoch': epoch,
                                  'model': dbn.state_dict(),
                                  'optimizer': optimizer.state_dict()},
-                                os.path.join(MODELS_DIR,
+                                os.path.join(args.model_folder,
                                              date_str + '.' + dbn.mode +
                                              '.' + str(dbn.ncs) + '.' + str(dbn.T) +
                                              '.' + str(epoch) + '.pytorch.tar'))
@@ -257,45 +265,50 @@ if __name__ == '__main__':
             data = Variable(data.view(-1, nx))  # visible
             # Get samples from all 3 modes
             dbn.mode = 'vanilla'
-            S=20
+            S = args.nS
             data_sample, _, q_sample_vanilla, _, p_sample_vanilla, _ = dbn(
                 data,
                 compute_loss=False,
-                S=20
+                S=args.nS * args.timesteps
                 )
             # print('v', end='')
             dbn.mode = 'greedy'
             data_sample, _, q_sample_greedy, _, p_sample_greedy, _ = dbn(
                 data,
                 compute_loss=False,
-                S=20
+                S=args.nS * args.timesteps,
+                n_constraints=args.ncs
                 )
             # print('g', end='')
             dbn.mode = 'random'
             data_sample, _, q_sample_T_random, _, p_sample_T_random, _ = dbn(
                 data,
                 compute_loss=False,
-                S=20
+                S=args.nS,
+                n_constraints=args.ncs,
+                T=args.timesteps
                 )
             # NOTE Set the end of the sample to data input.
-            p_sample_vanilla[-1] = data_sample.expand(S, *data_sample.size())
-            p_sample_greedy[-1] = data_sample.expand(S, *data_sample.size())
+            p_sample_vanilla[-1] = data_sample.expand(args.nS * args.timesteps, *data_sample.size())
+            p_sample_greedy[-1] = data_sample.expand(args.nS * args.timesteps, *data_sample.size())
             for p_sample_random in p_sample_T_random:
                 p_sample_random[-1] = data_sample.expand(S, *data_sample.size())
             # print('r', end='')
             dbn.mode = 'vanilla'
-            # Get the ELBO for those samples using vanilla paramaters
-            vanilla_elbos.append(dbn.evaluate_sample([q_sample_vanilla], [p_sample_vanilla]))
-            # print(' vl', end='')
-            greedy_elbos.append(dbn.evaluate_sample([q_sample_greedy], [p_sample_greedy]))
-            # print(' gl', end='')
-            random_elbos.append(dbn.evaluate_sample(q_sample_T_random, p_sample_T_random))
-            # print(' rl', end='')
-            # print(vanilla_elbos[-1], greedy_elbos[-1], random_elbos[-1])
+            if args.perplexity:
+                # misnamed. should be perplexity
+                vanilla_elbos.append(evaluate_perplexity(dbn, [q_sample_vanilla], [p_sample_vanilla]))
+                greedy_elbos.append(evaluate_perplexity(dbn, [q_sample_greedy], [p_sample_greedy]))
+                random_elbos.append(evaluate_perplexity(dbn, q_sample_T_random, p_sample_T_random))
+            else:
+                # Get the ELBO for those samples using vanilla paramaters
+                vanilla_elbos.append(dbn.evaluate_sample([q_sample_vanilla], [p_sample_vanilla]))
+                greedy_elbos.append(dbn.evaluate_sample([q_sample_greedy], [p_sample_greedy]))
+                random_elbos.append(dbn.evaluate_sample(q_sample_T_random, p_sample_T_random))
         # pdb.set_trace()
         all_elbos = {'vanilla': vanilla_elbos, 'greedy': greedy_elbos, 'random': random_elbos}
-        with open(MODELS_DIR +
+        with open(args.model_folder +
                   date_str + '.' + original_mode +
                   '.' + str(dbn.ncs) + '.' + str(dbn.T) +
-                  '.' + str(epoch) + '.elbos.pickle', 'wb') as f:
+                  '.' + str(start_epoch) + '.' + ('perp' if args.perplexity else 'elbos') + '.pickle', 'wb') as f:
             pickle.dump(all_elbos, f)

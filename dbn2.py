@@ -579,6 +579,47 @@ class DBN(nn.Module):
             elbos.append(compute_elbo_sampled_batched(logp, logq))
         return elbos
 
+def evaluate_perplexity(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
+    '''
+        A function to evaluate the perplexity for a model (dbn) of samples
+            q_samples_T: FloatTensor list list
+                each float tensor is binary.
+                represents  x, z^0, z^2  .... z^Lm1
+            p_samples_T: FloatTensor list list
+                each float tensor is binary.
+                represents z^Lm1, z^Lm2 ... z^0, x
+        RETURNS:
+            perplexity_T: Variable list
+    '''
+    # q doesn't even matter lol
+    (S, bs, _) = q_samples_T[0][0].size()
+    T = len(q_samples_T)
+    perplexities = []
+    for t in range(T):
+        q_samples = q_samples_T[t]
+        p_samples = p_samples_T[t]
+        log_px = []
+        p = smooth_distribution(F.sigmoid(dbn.bq[-1]).expand(S, bs, -1),
+                                eps=smooth_eps)
+        log_pz = Bernoulli(p).log_prob(p_samples[0]).sum(dim=2)  # S, bs
+
+        for l in range(1, dbn.L + 1):
+            # Use p_samples[l-1] to generate p
+            p = smooth_distribution(
+                F.sigmoid(F.linear(p_samples[l - 1], dbn.W[dbn.L - l], dbn.bp[dbn.L - l])),
+                eps=smooth_eps
+            )
+            log_px.append(Bernoulli(p).log_prob(p_samples[l]).sum(dim=2))  # S, bs
+            # Use p to evaluate log_prob(p_samples[l])
+        log_px = sum(log_px)  # S, bs
+        log_pz_max = log_pz.max(dim=0)[0]
+        log_pz_max_expanded = log_pz_max.expand(S, bs)
+        inner_weight = (log_pz - log_pz_max).exp()
+        num = log_pz_max + torch.log((inner_weight * (-log_px)).sum(dim=0))
+        den = log_pz_max + torch.log(inner_weight.sum(dim=0))
+        perplexities.append(-1 * (num - den).exp().sum())
+    return perplexities
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from torchvision import datasets, transforms
