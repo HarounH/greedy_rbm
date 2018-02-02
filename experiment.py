@@ -245,7 +245,7 @@ if __name__ == '__main__':
                 loss.backward()
                 optimizer.step()
             print('epoch', epoch, 'loss=', np.mean(losses))
-            if every(epoch, stride=5, start=1):
+            if every(epoch, stride=5):
                 save_checkpoint({'epoch': epoch,
                                  'model': dbn.state_dict(),
                                  'optimizer': optimizer.state_dict()},
