@@ -144,11 +144,11 @@ def compute_elbo_sampled_batched(logp, logq):
     inner_weight = (logq - logq_max_expanded).exp()
 
     # Thr following are 1, bs
-    term1_num = logq_max + torch.log((inner_weight * (-logp)).mean(dim=0))
-    term2_num = logq_max + torch.log((inner_weight * (-logq)).mean(dim=0))
+    term1_num = logq_max + torch.log((inner_weight * (-logp)).sum(dim=0))
+    term2_num = logq_max + torch.log((inner_weight * (-logq)).sum(dim=0))
     # num = (term1_num - term2_num)  # UNSTABLE
-    den = logq_max + torch.log(inner_weight.mean(dim=0))
-    return (-1 * (term1_num - den).exp().sum() + (term2_num - den).exp().sum()) / (bs)
+    den = logq_max + torch.log(inner_weight.sum(dim=0))
+    return (-1 * ((term1_num - den)/S).exp().sum() + ((term2_num - den)/S).exp().sum()) / (bs)
 
 
 def glorot_init(param):
