@@ -148,7 +148,7 @@ def compute_elbo_sampled_batched(logp, logq):
     term2_num = logq_max + torch.log((inner_weight * (-logq)).sum(dim=0))
     # num = (term1_num - term2_num)  # UNSTABLE
     den = logq_max + torch.log(inner_weight.sum(dim=0))
-    return (-1 * ((term1_num - den)/S).exp().sum() + ((term2_num - den)/S).exp().sum()) / (bs)
+    return (-1 * ((term1_num - den)).exp().sum() + ((term2_num - den)).exp().sum()) / (bs)
 
 
 def glorot_init(param):
