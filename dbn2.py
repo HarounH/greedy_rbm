@@ -72,11 +72,19 @@ class DBN(nn.Module):
         self.V = [nn.Parameter(glorot_init(torch.rand(nx, nzs[0])))]
         self.bp = [nn.Parameter(glorot_init(torch.rand(nx)))]
         self.bq = [nn.Parameter(glorot_init(torch.rand(nzs[0])))]
+        self.register_parameter('W' + '0', self.W[-1])
+        self.register_parameter('V' + '0', self.V[-1])
+        self.register_parameter('bp' + '0', self.bp[-1])
+        self.register_parameter('bq' + '0', self.bq[-1])
         for l in range(1, self.L):
             self.W.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1], nzs[l]))))
             self.W.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1], nzs[l]))))
             self.bp.append(nn.Parameter(glorot_init(torch.rand(nzs[l-1]))))
             self.bq.append(nn.Parameter(glorot_init(torch.rand(nzs[l]))))
+            self.register_parameter('W' + str(l), self.W[-1])
+            self.register_parameter('V' + str(l), self.V[-1])
+            self.register_parameter('bp' + str(l), self.bp[-1])
+            self.register_parameter('bq' + str(l), self.bq[-1])
         self.ncs=ncs
         self.T=T
     def q_parameters(self):
@@ -393,19 +401,19 @@ class DBN(nn.Module):
         if T is None:
             T = self.T
         if self.mode == 'vanilla':
+            # print('vanilla')
             return self.vanilla_forward(xin_dist,
                                         compute_loss=compute_loss,
                                         S=S)
         elif self.mode == 'random':
-            if aggregate_fn is None:
-                def aggregate_fn(ls):
-                    return sum(ls) / len(ls)
+            # print('random')
             return self.random_forward(xin_dist,
                                        compute_loss=compute_loss,
                                        S=S,
                                        k=n_constraints,
                                        T=T)
         elif self.mode == 'greedy':
+            # print('greedy')
             return self.greedy_forward(xin_dist,
                                        compute_loss=compute_loss,
                                        S=S,
@@ -579,6 +587,56 @@ class DBN(nn.Module):
             elbos.append(compute_elbo_sampled_batched(logp, logq))
         return elbos
 
+def evaluate_likelihood(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
+        (S, bs, _) = q_samples_T[0][0].size()
+        T = len(q_samples_T)
+        likelihoods = []
+        for t in range(T):
+            q_samples = q_samples_T[t]
+            p_samples = p_samples_T[t]
+            # Generate samplers, and then the probabilities
+            # Evaluate logq
+            logq = []
+            for l in range(dbn.L):  # 0, 1, 2, ...Lm1
+                q = smooth_distribution(
+                    F.sigmoid(F.linear(q_samples[l], dbn.V[l].t(), dbn.bq[l])),
+                    eps=smooth_eps
+                )  # S, bs, nzs[l + 1]
+                logq.append(Bernoulli(q).log_prob(q_samples[l + 1]).sum(dim=2))
+            logq = sum(logq)
+
+            # Evaluate logp
+            logp = []
+            p = smooth_distribution(F.sigmoid(dbn.bq[-1]).expand(S, bs, -1),
+                                    eps=smooth_eps)
+            logp.append(Bernoulli(p).log_prob(p_samples[0]).sum(dim=2))
+            for l in range(1, dbn.L + 1):
+                # Use p_samples[l-1] to generate p
+                p = smooth_distribution(
+                    F.sigmoid(F.linear(p_samples[l - 1], dbn.W[dbn.L - l], dbn.bp[dbn.L - l])),
+                    eps=smooth_eps
+                )
+                logp.append(Bernoulli(p).log_prob(p_samples[l]).sum(dim=2))
+                # Use p to evaluate log_prob(p_samples[l])
+            logp = sum(logp)  # S, bs
+            logp_max = logp.max(dim=0)[0]
+            logp_max_expanded = logp_max.expand(S, bs)
+            ll_batches = logp_max +\
+                torch.log((logp - logp_max_expanded).exp().sum(dim=0))
+            ll = ll_batches.mean()
+            # logq, logp should be S, bs sized FloatTensor
+            # logq_max = logq.max(dim=0)[0]  # 1, bs
+            # logq_max_expanded = logq_max.expand(S, bs)  # S, bs
+            # inner_weight = (logq - logq_max_expanded).exp()
+            # # Thr following are 1, bs
+            # term1_num = logq_max + torch.log((inner_weight * (-logp)).sum(dim=0))
+            # # num = (term1_num - term2_num)  # UNSTABLE
+            # den = logq_max + torch.log(inner_weight.sum(dim=0))
+            # likelihood = (-1 * ((term1_num - den)).exp().sum()) / (bs)
+            # likelihood = logp.mean()
+            likelihoods.append(ll)
+        return likelihoods
+
 def evaluate_perplexity(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
     '''
         A function to evaluate the perplexity for a model (dbn) of samples
@@ -617,7 +675,7 @@ def evaluate_perplexity(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
         inner_weight = (log_pz - log_pz_max).exp()
         num = log_pz_max + torch.log((inner_weight * (-log_px)).sum(dim=0))
         den = log_pz_max + torch.log(inner_weight.sum(dim=0))
-        perplexities.append(-1 * (num - den).exp().sum())
+        perplexities.append(-1 * (num - den).exp().sum() / (bs))
     return perplexities
 
 if __name__ == '__main__':

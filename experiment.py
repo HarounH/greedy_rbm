@@ -26,7 +26,7 @@ from utils import smooth_distribution, EPS, sample_range, \
 
 from utils import save_checkpoint, load_checkpoint, every
 
-from dbn2 import DBN, evaluate_perplexity
+from dbn2 import DBN, evaluate_perplexity, evaluate_likelihood
 
 
 torch.manual_seed(1337)
@@ -183,6 +183,10 @@ if __name__ == '__main__':
                         type=bool,
                         default=False,
                         help='Should testing be using perplexity instead of ELBO')
+    parser.add_argument('--likelihood',
+                        type=bool,
+                        default=False,
+                        help='Should testing be using likelihood instead of ELBO')
     parser.add_argument('-S', '--nS',
                         type=int,
                         default=20,
@@ -193,8 +197,9 @@ if __name__ == '__main__':
     if not os.path.exists(os.path.dirname(args.model_folder)):
         # pdb.set_trace()
         os.makedirs(os.path.dirname(args.model_folder))
+    inner_fix = 'perp' if args.perplexity else 'elbos'
+    inner_fix = 'lkl' if args.likelihood else inner_fix
 
-    # pdb.set_trace()
     # Data loading
     batch_size = 20
     if args.dataset == 'mnist':
@@ -238,7 +243,7 @@ if __name__ == '__main__':
                     data,
                     compute_loss=True
                     )
-
+                pdb.set_trace()
                 # loss = -elbo
                 losses.append(loss.data[0])
                 optimizer.zero_grad()
@@ -266,14 +271,14 @@ if __name__ == '__main__':
             # Get samples from all 3 modes
             dbn.mode = 'vanilla'
             S = args.nS
-            data_sample, _, q_sample_vanilla, _, p_sample_vanilla, _ = dbn(
+            data_sample_vanilla, _, q_sample_vanilla, _, p_sample_vanilla, _ = dbn(
                 data,
                 compute_loss=False,
                 S=args.nS * args.timesteps
                 )
             # print('v', end='')
             dbn.mode = 'greedy'
-            data_sample, _, q_sample_greedy, _, p_sample_greedy, _ = dbn(
+            data_sample_greedy, _, q_sample_greedy, _, p_sample_greedy, _ = dbn(
                 data,
                 compute_loss=False,
                 S=args.nS * args.timesteps,
@@ -281,18 +286,19 @@ if __name__ == '__main__':
                 )
             # print('g', end='')
             dbn.mode = 'random'
-            data_sample, _, q_sample_T_random, _, p_sample_T_random, _ = dbn(
+            data_sample_random, _, q_sample_T_random, _, p_sample_T_random, _ = dbn(
                 data,
                 compute_loss=False,
                 S=args.nS,
                 n_constraints=args.ncs,
                 T=args.timesteps
                 )
+            # pdb.set_trace()
             # NOTE Set the end of the sample to data input.
-            p_sample_vanilla[-1] = data_sample.expand(args.nS * args.timesteps, *data_sample.size())
-            p_sample_greedy[-1] = data_sample.expand(args.nS * args.timesteps, *data_sample.size())
+            p_sample_vanilla[-1] = data_sample_vanilla.expand(args.nS * args.timesteps, *data_sample_vanilla.size())
+            p_sample_greedy[-1] = data_sample_greedy.expand(args.nS * args.timesteps, *data_sample_greedy.size())
             for p_sample_random in p_sample_T_random:
-                p_sample_random[-1] = data_sample.expand(S, *data_sample.size())
+                p_sample_random[-1] = data_sample_random.expand(S, *data_sample_random.size())
             # print('r', end='')
             dbn.mode = 'vanilla'
             if args.perplexity:
@@ -300,6 +306,10 @@ if __name__ == '__main__':
                 vanilla_elbos.append(evaluate_perplexity(dbn, [q_sample_vanilla], [p_sample_vanilla]))
                 greedy_elbos.append(evaluate_perplexity(dbn, [q_sample_greedy], [p_sample_greedy]))
                 random_elbos.append(evaluate_perplexity(dbn, q_sample_T_random, p_sample_T_random))
+            elif args.likelihood:
+                vanilla_elbos.append(evaluate_likelihood(dbn, [q_sample_vanilla], [p_sample_vanilla]))
+                greedy_elbos.append(evaluate_likelihood(dbn, [q_sample_greedy], [p_sample_greedy]))
+                random_elbos.append(evaluate_likelihood(dbn, q_sample_T_random, p_sample_T_random))
             else:
                 # Get the ELBO for those samples using vanilla paramaters
                 vanilla_elbos.append(dbn.evaluate_sample([q_sample_vanilla], [p_sample_vanilla]))
@@ -310,5 +320,5 @@ if __name__ == '__main__':
         with open(args.model_folder +
                   date_str + '.' + original_mode +
                   '.' + str(dbn.ncs) + '.' + str(dbn.T) +
-                  '.' + str(start_epoch) + '.' + ('perp' if args.perplexity else 'elbos') + '.pickle', 'wb') as f:
+                  '.' + str(start_epoch) + '.' + (inner_fix) + '.pickle', 'wb') as f:
             pickle.dump(all_elbos, f)
