@@ -243,7 +243,6 @@ if __name__ == '__main__':
                     data,
                     compute_loss=True
                     )
-                pdb.set_trace()
                 # loss = -elbo
                 losses.append(loss.data[0])
                 optimizer.zero_grad()
