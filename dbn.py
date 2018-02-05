@@ -24,7 +24,7 @@ from utils import smooth_distribution, EPS, sample_range, \
 torch.manual_seed(1337)
 
 
-class DBN(nn.Module):
+class DeprecatedDBN(nn.Module):
     '''
         Notation:
         q (inference) : x -> z^0 -> z^1 ... z^{L-1}

@@ -700,7 +700,7 @@ if __name__ == '__main__':
         batch_size=batch_size)
 
     dbn = DBN(784, [200], mode='vanilla')
-    pdb.set_trace()
+    # pdb.set_trace()
     param_groups = [{'params': dbn.q_parameters(), 'lr': 0.6e-4},
                     {'params': dbn.p_parameters(), 'lr': 3e-4}]
     optimizer = optim.Adam(param_groups)
