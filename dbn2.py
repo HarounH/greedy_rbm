@@ -188,16 +188,16 @@ class DBN(nn.Module):
         for t in range(T):
             sampler = samplers_T[t]
             sample = samples_T[t]
-            sampler_A = Bernoulli(0.5 * torch.ones(k, self.nzs[0]))
-            A = sampler_A.sample()
-            sampler_b = Bernoulli(0.5 * torch.ones(k))
-            b = sampler_b.sample()
-            C, bp = binary_row_reduce(A, b)
-            C = Variable(C)
-            bp = Variable(bp)
-            # Imposing constraints
-            sample[0][:, :, :k] = \
-                (sample[0][:, :, k:].matmul(C[:, k:].t()) + bp) % 2
+            # sampler_A = Bernoulli(0.5 * torch.ones(k, self.nzs[0]))
+            # A = sampler_A.sample()
+            # sampler_b = Bernoulli(0.5 * torch.ones(k))
+            # b = sampler_b.sample()
+            # C, bp = binary_row_reduce(A, b)
+            # C = Variable(C)
+            # bp = Variable(bp)
+            # # Imposing constraints
+            # sample[0][:, :, :k] = \
+            #     (sample[0][:, :, k:].matmul(C[:, k:].t()) + bp) % 2
             # Building sampler (for x)
             p = smooth_distribution(
                 F.sigmoid(F.linear(sample[0], self.W[0], self.bp[0])),
@@ -205,11 +205,11 @@ class DBN(nn.Module):
             )
             sampler.append(Bernoulli(p))
             sample.append(sampler[-1].sample())
-            Cs.append(C)
-            bps.append(bp)
+            # Cs.append(C)
+            # bps.append(bp)
 
             # Enforce on z_Lm1
-        return samples_T, samplers_T, Cs, bps
+        return samples_T, samplers_T, None, None
 
     def greedy_generate(self, z_Lm1, S=1, smooth_eps=eps, k=195):
         '''
@@ -239,17 +239,17 @@ class DBN(nn.Module):
                     ]
 
         # Constrain z_Lm1
-        constants = self.assigned_constants(samplers[0].probs[0, 0, :])
-        Z_f_indices, Z_f_c_indices = self.get_k_free_latent_variables(samplers[0], k=k, constants=constants)
-        # pdb.set_trace()  # : See if this works
-        samples[0][:, :, Z_f_c_indices] = constants[Z_f_c_indices].expand(samples[0][:, :, Z_f_c_indices].size())
+        # constants = self.assigned_constants(samplers[0].probs[0, 0, :])
+        # Z_f_indices, Z_f_c_indices = self.get_k_free_latent_variables(samplers[0], k=k, constants=constants)
+        # # pdb.set_trace()  # : See if this works
+        # samples[0][:, :, Z_f_c_indices] = constants[Z_f_c_indices].expand(samples[0][:, :, Z_f_c_indices].size())
         p = smooth_distribution(
             F.sigmoid(F.linear(samples[0], self.W[0], self.bp[0])),
             eps=smooth_eps
         )
         samplers.append(Bernoulli(p))
         samples.append(samplers[-1].sample())
-        return samples, samplers, Z_f_indices, Z_f_c_indices, constants
+        return samples, samplers, None, None, None
 
     def assigned_constants(self, paramaters):
         return (paramaters > 0.5).float()
@@ -590,7 +590,7 @@ class DBN(nn.Module):
 def evaluate_likelihood(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
         (S, bs, _) = q_samples_T[0][0].size()
         T = len(q_samples_T)
-        likelihoods = []
+        negative_log_likelihoods = []
         for t in range(T):
             q_samples = q_samples_T[t]
             p_samples = p_samples_T[t]
@@ -609,7 +609,8 @@ def evaluate_likelihood(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
             logp = []
             p = smooth_distribution(F.sigmoid(dbn.bq[-1]).expand(S, bs, -1),
                                     eps=smooth_eps)
-            logp.append(Bernoulli(p).log_prob(p_samples[0]).sum(dim=2))
+            logpz = Bernoulli(p).log_prob(p_samples[0]).sum(dim=2)
+            logp.append(logpz)
             for l in range(1, dbn.L + 1):
                 # Use p_samples[l-1] to generate p
                 p = smooth_distribution(
@@ -621,21 +622,15 @@ def evaluate_likelihood(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
             logp = sum(logp)  # S, bs
             logp_max = logp.max(dim=0)[0]
             logp_max_expanded = logp_max.expand(S, bs)
-            ll_batches = logp_max +\
+            ll_batches_num = logp_max +\
                 torch.log((logp - logp_max_expanded).exp().sum(dim=0))
-            ll = ll_batches.mean()
-            # logq, logp should be S, bs sized FloatTensor
-            # logq_max = logq.max(dim=0)[0]  # 1, bs
-            # logq_max_expanded = logq_max.expand(S, bs)  # S, bs
-            # inner_weight = (logq - logq_max_expanded).exp()
-            # # Thr following are 1, bs
-            # term1_num = logq_max + torch.log((inner_weight * (-logp)).sum(dim=0))
-            # # num = (term1_num - term2_num)  # UNSTABLE
-            # den = logq_max + torch.log(inner_weight.sum(dim=0))
-            # likelihood = (-1 * ((term1_num - den)).exp().sum()) / (bs)
-            # likelihood = logp.mean()
-            likelihoods.append(ll)
-        return likelihoods
+            logpz_max = logpz.max(dim=0)[0]
+            log_pz_max_expanded = logpz_max.expand(S, bs)
+            ll_batches_den = logpz_max +\
+                torch.log((logpz - log_pz_max_expanded).exp().sum(dim=0))
+            ll = (ll_batches_num - ll_batches_den).mean()
+            negative_log_likelihoods.append(-ll)
+        return negative_log_likelihoods
 
 def evaluate_perplexity(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
     '''
@@ -660,7 +655,7 @@ def evaluate_perplexity(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
         p = smooth_distribution(F.sigmoid(dbn.bq[-1]).expand(S, bs, -1),
                                 eps=smooth_eps)
         log_pz = Bernoulli(p).log_prob(p_samples[0]).sum(dim=2)  # S, bs
-
+        log_px.append(log_pz)
         for l in range(1, dbn.L + 1):
             # Use p_samples[l-1] to generate p
             p = smooth_distribution(
@@ -669,13 +664,19 @@ def evaluate_perplexity(dbn, q_samples_T, p_samples_T, smooth_eps=EPS):
             )
             log_px.append(Bernoulli(p).log_prob(p_samples[l]).sum(dim=2))  # S, bs
             # Use p to evaluate log_prob(p_samples[l])
+        Li = p_samples[-1].sum(dim=2).mean(dim=0, keepdim=True)  # Length of document i, i \in [S]*[bs]
         log_px = sum(log_px)  # S, bs
+
+        # Numerator terms
+        log_px_max = log_px.max(dim=0)[0]
+        log_px_max_expanded = log_px_max.expand(S, bs)
+        batches_num = log_px_max +\
+            torch.log((log_px - log_px_max_expanded).exp().sum(dim=0))
         log_pz_max = log_pz.max(dim=0)[0]
-        log_pz_max_expanded = log_pz_max.expand(S, bs)
-        inner_weight = (log_pz - log_pz_max).exp()
-        num = log_pz_max + torch.log((inner_weight * (-log_px)).sum(dim=0))
-        den = log_pz_max + torch.log(inner_weight.sum(dim=0))
-        perplexities.append(-1 * (num - den).exp().sum() / (bs))
+        log_pz_max_expanded = log_pz.expand(S, bs)
+        batches_den = log_pz_max +\
+            torch.log((log_pz - log_pz_max_expanded).exp().sum(dim=0))
+        perplexities.append(-((batches_num - batches_den) / Li).mean())
     return perplexities
 
 if __name__ == '__main__':

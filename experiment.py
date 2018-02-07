@@ -292,27 +292,57 @@ if __name__ == '__main__':
                 n_constraints=args.ncs,
                 T=args.timesteps
                 )
-            # pdb.set_trace()
-            # NOTE Set the end of the sample to data input.
+
+
             p_sample_vanilla[-1] = data_sample_vanilla.expand(args.nS * args.timesteps, *data_sample_vanilla.size())
             p_sample_greedy[-1] = data_sample_greedy.expand(args.nS * args.timesteps, *data_sample_greedy.size())
             for p_sample_random in p_sample_T_random:
                 p_sample_random[-1] = data_sample_random.expand(S, *data_sample_random.size())
+
+            # pdb.set_trace()
+            # NOTE Set the end of the sample to data input.
+            # q_sample_T_vanilla = [q_sample_vanilla]
+            # q_sample_T_greedy = [q_sample_greedy]
+            # p_sample_T_vanilla = [p_sample_vanilla]
+            # p_sample_T_greedy = [p_sample_greedy]
+
+            # reshaping into S, T
+            q_sample_T_vanilla = [[] for t in range(args.timesteps)]
+            q_sample_T_greedy = [[] for t in range(args.timesteps)]
+            p_sample_T_vanilla = [[] for t in range(args.timesteps)]
+            p_sample_T_greedy = [[] for t in range(args.timesteps)]
+            for t in range(args.timesteps):
+                for l in range(len(q_sample_vanilla)):
+                    q_sample_T_vanilla[t].append(q_sample_vanilla[l][(t) * args.nS: (t + 1) * args.nS])
+                for l in range(len(p_sample_vanilla)):
+                    p_sample_T_vanilla[t].append(p_sample_vanilla[l][(t) * args.nS: (t + 1) * args.nS])
+                for l in range(len(q_sample_greedy)):
+                    q_sample_T_greedy[t].append(q_sample_greedy[l][(t) * args.nS: (t + 1) * args.nS])
+                for l in range(len(p_sample_greedy)):
+                    p_sample_T_greedy[t].append(p_sample_greedy[l][(t) * args.nS: (t + 1) * args.nS])
+
+            pdb.set_trace()
             # print('r', end='')
             dbn.mode = 'vanilla'
             if args.perplexity:
                 # misnamed. should be perplexity
-                vanilla_elbos.append(evaluate_perplexity(dbn, [q_sample_vanilla], [p_sample_vanilla]))
-                greedy_elbos.append(evaluate_perplexity(dbn, [q_sample_greedy], [p_sample_greedy]))
+            # NOTE Set the end of the sample to data input.
+                p_sample_vanilla[-1] = data.expand(args.nS * args.timesteps, *data.size())
+                p_sample_greedy[-1] = data.expand(args.nS * args.timesteps, *data.size())
+                for p_sample_random in p_sample_T_random:
+                    p_sample_random[-1] = data.expand(S, *data.size())
+
+                vanilla_elbos.append(evaluate_perplexity(dbn, q_sample_T_vanilla, p_sample_T_vanilla))
+                greedy_elbos.append(evaluate_perplexity(dbn, q_sample_T_greedy, p_sample_T_greedy))
                 random_elbos.append(evaluate_perplexity(dbn, q_sample_T_random, p_sample_T_random))
             elif args.likelihood:
-                vanilla_elbos.append(evaluate_likelihood(dbn, [q_sample_vanilla], [p_sample_vanilla]))
-                greedy_elbos.append(evaluate_likelihood(dbn, [q_sample_greedy], [p_sample_greedy]))
+                vanilla_elbos.append(evaluate_likelihood(dbn, q_sample_T_vanilla, p_sample_T_vanilla))
+                greedy_elbos.append(evaluate_likelihood(dbn, q_sample_T_greedy, p_sample_T_greedy))
                 random_elbos.append(evaluate_likelihood(dbn, q_sample_T_random, p_sample_T_random))
             else:
                 # Get the ELBO for those samples using vanilla paramaters
-                vanilla_elbos.append(dbn.evaluate_sample([q_sample_vanilla], [p_sample_vanilla]))
-                greedy_elbos.append(dbn.evaluate_sample([q_sample_greedy], [p_sample_greedy]))
+                vanilla_elbos.append(dbn.evaluate_sample(q_sample_T_vanilla, p_sample_T_vanilla))
+                greedy_elbos.append(dbn.evaluate_sample(q_sample_T_greedy, p_sample_T_greedy))
                 random_elbos.append(dbn.evaluate_sample(q_sample_T_random, p_sample_T_random))
         # pdb.set_trace()
         all_elbos = {'vanilla': vanilla_elbos, 'greedy': greedy_elbos, 'random': random_elbos}

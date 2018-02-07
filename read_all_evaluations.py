@@ -31,7 +31,7 @@ from dbn2 import DBN
 torch.manual_seed(1337)
 
 
-latex_output_file = 'latex_output_file.tex'
+latex_output_file = 'medians_latex_output_file.tex'
 
 def avg(ls):
     return sum(ls) / len(ls)
@@ -39,6 +39,7 @@ def avg(ls):
 
 base_dirs = ['eval_models/models/']
 datasets = ['mnist', 'caltech', 'nips_data']
+# datasets = ['caltech']
 fileextension_dict = {'mnist':'lkl.pickle', 'nips_data':'perp.pickle', 'caltech':'lkl.pickle'}
 modes = ['vanilla', 'greedy', 'random']
 date_folders = ['jan30']
@@ -79,7 +80,7 @@ with open(latex_output_file, 'w') as f:
                         for epoch in epochs:
                             table = []
                             for mode in modes:
-                                data = [-results[dataset][mode][k][T][epoch][test_mode] for test_mode in modes]
+                                data = [results[dataset][mode][k][T][epoch][test_mode] for test_mode in modes]
                                 table.append([mode] + data)
                             table_str = tabulate(table, headers, tablefmt='latex')
                             intro = 'Dataset:' + dataset + '\\\\\n\tk:' + k + '\\\\\n\tT:' + T + '\\\\\n\n'

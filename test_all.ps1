@@ -23,6 +23,7 @@ python experiment.py --likelihood=True --test=True --dataset='caltech' --mode='g
 python experiment.py --likelihood=True --test=True --dataset='caltech' --mode='random' --model_folder='eval_models/models/caltech/random/jan30/' -k=20 -T=3 -r=True -f='1.28.2018.random.20.3.49.pytorch.tar'
 
 
+
 python experiment.py --likelihood=True --test=True --dataset='mnist' --mode='vanilla' --model_folder='eval_models/models/mnist/vanilla/jan30/' -k=5 -T=3 -r=True -f='1.28.2018.vanilla.5.3.49.pytorch.tar'
 python experiment.py --likelihood=True --test=True --dataset='mnist' --mode='greedy' --model_folder='eval_models/models/mnist/greedy/jan30/' -k=5 -T=3 -r=True -f='1.28.2018.greedy.5.3.49.pytorch.tar'
 python experiment.py --likelihood=True --test=True --dataset='mnist' --mode='random' --model_folder='eval_models/models/mnist/random/jan30/' -k=5 -T=3 -r=True -f='1.28.2018.random.5.3.49.pytorch.tar'
