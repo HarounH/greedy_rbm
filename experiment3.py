@@ -252,7 +252,7 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                pdb.set_trace()
+                # pdb.set_trace()
             print('epoch', epoch, 'loss=', np.mean(losses))
             if every(epoch, stride=5):
                 save_checkpoint({'epoch': epoch,
