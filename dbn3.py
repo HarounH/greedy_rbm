@@ -99,22 +99,30 @@ class DBN(nn.Module):
         if self.mode == 'vanilla':
             pass
         elif self.mode == 'greedy':
+            S, batch_size, _ = new_sample.size()
             constants = (q > 0.5).float()
             # pdb.set_trace()
             Z_f_c_indices = Bernoulli(q).log_prob(constants).topk(k)[1].data.tolist()
-            unbound = [temp.clone() for temp in torch.unbind(new_sample, dim=1)]
-            new_samples = []
-            unbound_constants = [temp.clone() for temp in torch.unbind(constants, dim=0)]
-            try:
-                for point_idx in range(len(unbound)):
-                    new_sample_batch = unbound[point_idx]  # nx
-                    point_zfc = Z_f_c_indices[point_idx]
-                    # pdb.set_trace()
-                    new_sample_batch[:, point_zfc] = unbound_constants[point_idx][point_zfc].expand(*new_sample_batch[:, point_zfc].size())
-                    new_samples.append(new_sample_batch)
-                new_sample = torch.stack(new_samples, dim=1)
-            except:
-                pdb.set_trace()
+            dim1 = [ ind // k for ind in range(k * batch_size)]
+            dim2 = sum(Z_f_c_indices, [])
+            new_values = constants[dim1, dim2]
+            new_values = new_values.expand(S, *new_values.size())
+            new_sample[:, dim1, dim2] = new_values
+            # Commented code is inefficient.
+            # pdb.set_trace()
+            # unbound = [temp.clone() for temp in torch.unbind(new_sample, dim=1)]
+            # new_samples = []
+            # unbound_constants = [temp.clone() for temp in torch.unbind(constants, dim=0)]
+            # try:
+            #     for point_idx in range(len(unbound)):
+            #         new_sample_batch = unbound[point_idx]  # nx
+            #         point_zfc = Z_f_c_indices[point_idx]
+            #         # pdb.set_trace()
+            #         new_sample_batch[:, point_zfc] = unbound_constants[point_idx][point_zfc].expand(*new_sample_batch[:, point_zfc].size())
+            #         new_samples.append(new_sample_batch)
+            #     new_sample = torch.stack(new_samples, dim=1)
+            # except:
+            #     pdb.set_trace()
         elif self.mode == 'random':
             sampler_A = Bernoulli(0.5 * torch.ones(k, self.nz))
             A = sampler_A.sample()

@@ -235,7 +235,7 @@ if __name__ == '__main__':
         # Training loop
         for epoch in range(start_epoch, start_epoch + args.n_epochs):
             losses = []
-            for _, (data, target) in enumerate(train_loader):
+            for lol1, (data, target) in enumerate(train_loader):
                 data = Variable(data.view(-1, nx))  # visible
                 if args.dataset == 'nips_data':
                     data_sample = data
@@ -253,6 +253,7 @@ if __name__ == '__main__':
                 loss.backward()
                 optimizer.step()
                 # pdb.set_trace()
+                # print(lol1, 'of', len(train_loader))
             print('epoch', epoch, 'loss=', np.mean(losses))
             if every(epoch, stride=5):
                 save_checkpoint({'epoch': epoch,
