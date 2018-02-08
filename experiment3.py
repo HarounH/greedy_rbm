@@ -260,7 +260,7 @@ if __name__ == '__main__':
                                  'optimizer': optimizer.state_dict()},
                                 os.path.join(args.model_folder,
                                              dbn.mode +
-                                             '.' + str(dbn.ncs) +
+                                             '.' + str(dbn.k) +
                                              '.' + str(dbn.T) +
                                              '.' + str(epoch) +
                                              '.pytorch.tar'))
@@ -326,6 +326,6 @@ if __name__ == '__main__':
         all_metrics = {'vanilla': vanilla_metrics, 'greedy': greedy_metrics, 'random': random_metrics}
         with open(args.model_folder +
                   args.mode +
-                  '.' + str(dbn.ncs) + '.' + str(dbn.T) +
+                  '.' + str(dbn.k) + '.' + str(dbn.T) +
                   '.' + str(start_epoch) + '.' + (inner_fix) + '.pickle', 'wb') as f:
             pickle.dump(all_metrics, f)
