@@ -26,13 +26,10 @@ from utils import smooth_distribution, EPS, sample_range, \
 
 from utils import save_checkpoint, load_checkpoint, every
 
-from dbn2 import DBN, evaluate_perplexity, evaluate_likelihood
+from dbn3 import DBN, evaluate_perplexity, evaluate_nll, evaluate_elbo
 
 
 torch.manual_seed(1337)
-
-
-date_str = '1.28.2018'
 
 
 class CaltechDataset(torch.utils.data.Dataset):
@@ -55,14 +52,16 @@ class CaltechDataset(torch.utils.data.Dataset):
 class NIPSDataset(torch.utils.data.Dataset):
     def __init__(self, counts, words=None):
         super(NIPSDataset, self).__init__()
-        self.counts = counts / counts.sum(dim=1, keepdim=True)
+        self.counts = counts# / counts.sum(dim=1, keepdim=True)
         self.n, self.nx = counts.size()
         self.words = words
+
     def __len__(self):
         return self.n
 
     def __getitem__(self, idx):
         return self.counts[idx], 0
+
 
 def get_mnist_data(batch_size, loc):
     '''
@@ -112,6 +111,7 @@ def get_caltech101_data(batch_size, loc='caltech101/'):
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=batch_size)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size)
     return train_loader, val_loader, test_loader
+
 
 def get_nips_data(batch_size, loc='nips_data/'):
     '''
@@ -192,8 +192,6 @@ if __name__ == '__main__':
                         default=20,
                         help='number of samples to use per random projection.')
     args = parser.parse_args()
-    args.model_folder = args.model_folder
-    # Make the directory if it doesn't exist.
     if not os.path.exists(os.path.dirname(args.model_folder)):
         # pdb.set_trace()
         os.makedirs(os.path.dirname(args.model_folder))
@@ -217,10 +215,10 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError
 
-    dbn = DBN(nx, [nz], mode=args.mode, ncs=args.ncs, T=args.timesteps)
+    dbn = DBN(nx, nz, mode=args.mode, ncs=args.ncs, T=args.timesteps)
     dbn.mode = args.mode
-    param_groups = [{'params': dbn.q_parameters(), 'lr': 0.6e-4},
-                    {'params': dbn.p_parameters(), 'lr': 3e-4}]
+    param_groups = [{'params': dbn.q_parameters, 'lr': 0.6e-4},
+                    {'params': dbn.p_parameters, 'lr': 3e-4}]
     optimizer = optim.Adam(param_groups)
     if args.resume:
         # Load model etc
@@ -239,115 +237,95 @@ if __name__ == '__main__':
             losses = []
             for _, (data, target) in enumerate(train_loader):
                 data = Variable(data.view(-1, nx))  # visible
-                data_sample, q, q_sample, p, p_sample, loss = dbn(
-                    data,
-                    compute_loss=True
-                    )
-                # loss = -elbo
-                losses.append(loss.data[0])
+                if args.dataset == 'nips_data':
+                    data_sample = data
+                else:
+                    data_sample = data.bernoulli()
+                q_sample, q, p_sample, p, loss_T = \
+                    dbn(data_sample,
+                        S=args.nS,
+                        k=args.ncs,
+                        T=args.timesteps,
+                        compute_loss=True)
+                loss = loss_T.median()
+                losses.append(loss)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                pdb.set_trace()
             print('epoch', epoch, 'loss=', np.mean(losses))
             if every(epoch, stride=5):
                 save_checkpoint({'epoch': epoch,
                                  'model': dbn.state_dict(),
                                  'optimizer': optimizer.state_dict()},
                                 os.path.join(args.model_folder,
-                                             date_str + '.' + dbn.mode +
-                                             '.' + str(dbn.ncs) + '.' + str(dbn.T) +
-                                             '.' + str(epoch) + '.pytorch.tar'))
+                                             dbn.mode +
+                                             '.' + str(dbn.ncs) +
+                                             '.' + str(dbn.T) +
+                                             '.' + str(epoch) +
+                                             '.pytorch.tar'))
                 print('Saved model on epoch', epoch)
-    original_mode = args.mode
+
     if args.test is True:
         print('Started testing')
-        vanilla_elbos = []
-        random_elbos = []
-        greedy_elbos = []
+        vanilla_metrics = []
+        random_metrics = []
+        greedy_metrics = []
         for mbi, (data, target) in enumerate(test_loader):
             print('mb ', mbi)
             data = Variable(data.view(-1, nx))  # visible
-            # Get samples from all 3 modes
-            dbn.mode = 'vanilla'
-            S = args.nS
-            data_sample_vanilla, _, q_sample_vanilla, _, p_sample_vanilla, _ = dbn(
-                data,
-                compute_loss=False,
-                S=args.nS * args.timesteps
-                )
-            # print('v', end='')
-            dbn.mode = 'greedy'
-            data_sample_greedy, _, q_sample_greedy, _, p_sample_greedy, _ = dbn(
-                data,
-                compute_loss=False,
-                S=args.nS * args.timesteps,
-                n_constraints=args.ncs
-                )
-            # print('g', end='')
-            dbn.mode = 'random'
-            data_sample_random, _, q_sample_T_random, _, p_sample_T_random, _ = dbn(
-                data,
-                compute_loss=False,
-                S=args.nS,
-                n_constraints=args.ncs,
-                T=args.timesteps
-                )
-
-
-            p_sample_vanilla[-1] = data_sample_vanilla.expand(args.nS * args.timesteps, *data_sample_vanilla.size())
-            p_sample_greedy[-1] = data_sample_greedy.expand(args.nS * args.timesteps, *data_sample_greedy.size())
-            for p_sample_random in p_sample_T_random:
-                p_sample_random[-1] = data_sample_random.expand(S, *data_sample_random.size())
-
-            # pdb.set_trace()
-            # NOTE Set the end of the sample to data input.
-            q_sample_T_vanilla = [q_sample_vanilla]
-            q_sample_T_greedy = [q_sample_greedy]
-            p_sample_T_vanilla = [p_sample_vanilla]
-            p_sample_T_greedy = [p_sample_greedy]
-
-            # reshaping into S, T
-            # q_sample_T_vanilla = [[] for t in range(args.timesteps)]
-            # q_sample_T_greedy = [[] for t in range(args.timesteps)]
-            # p_sample_T_vanilla = [[] for t in range(args.timesteps)]
-            # p_sample_T_greedy = [[] for t in range(args.timesteps)]
-            # for t in range(args.timesteps):
-            #     for l in range(len(q_sample_vanilla)):
-            #         q_sample_T_vanilla[t].append(q_sample_vanilla[l][(t) * args.nS: (t + 1) * args.nS])
-            #     for l in range(len(p_sample_vanilla)):
-            #         p_sample_T_vanilla[t].append(p_sample_vanilla[l][(t) * args.nS: (t + 1) * args.nS])
-            #     for l in range(len(q_sample_greedy)):
-            #         q_sample_T_greedy[t].append(q_sample_greedy[l][(t) * args.nS: (t + 1) * args.nS])
-            #     for l in range(len(p_sample_greedy)):
-            #         p_sample_T_greedy[t].append(p_sample_greedy[l][(t) * args.nS: (t + 1) * args.nS])
-
-            pdb.set_trace()
-            # print('r', end='')
-            dbn.mode = 'vanilla'
-            if args.perplexity:
-                # misnamed. should be perplexity
-            # NOTE Set the end of the sample to data input.
-                p_sample_vanilla[-1] = data.expand(args.nS * args.timesteps, *data.size())
-                p_sample_greedy[-1] = data.expand(args.nS * args.timesteps, *data.size())
-                for p_sample_random in p_sample_T_random:
-                    p_sample_random[-1] = data.expand(S, *data.size())
-
-                vanilla_elbos.append(evaluate_perplexity(dbn, q_sample_T_vanilla, p_sample_T_vanilla))
-                greedy_elbos.append(evaluate_perplexity(dbn, q_sample_T_greedy, p_sample_T_greedy))
-                random_elbos.append(evaluate_perplexity(dbn, q_sample_T_random, p_sample_T_random))
-            elif args.likelihood:
-                vanilla_elbos.append(evaluate_likelihood(dbn, q_sample_T_vanilla, p_sample_T_vanilla))
-                greedy_elbos.append(evaluate_likelihood(dbn, q_sample_T_greedy, p_sample_T_greedy))
-                random_elbos.append(evaluate_likelihood(dbn, q_sample_T_random, p_sample_T_random))
+            if args.dataset == 'nips_data':
+                data_sample = data
             else:
-                # Get the ELBO for those samples using vanilla paramaters
-                vanilla_elbos.append(dbn.evaluate_sample(q_sample_T_vanilla, p_sample_T_vanilla))
-                greedy_elbos.append(dbn.evaluate_sample(q_sample_T_greedy, p_sample_T_greedy))
-                random_elbos.append(dbn.evaluate_sample(q_sample_T_random, p_sample_T_random))
-        # pdb.set_trace()
-        all_elbos = {'vanilla': vanilla_elbos, 'greedy': greedy_elbos, 'random': random_elbos}
+                data_sample = data.bernoulli()
+            dbn.mode = 'vanilla'
+            q_samples_T_vanilla, _, p_samples_T_vanilla, _, _ = \
+                dbn(data_sample,
+                    S=args.nS,
+                    k=args.ncs,
+                    T=args.timesteps,
+                    compute_loss=False)
+            dbn.mode = 'random'
+            q_samples_T_random, _, p_samples_T_random, _, _ = \
+                dbn(data_sample,
+                    S=args.nS,
+                    k=args.ncs,
+                    T=args.timesteps,
+                    compute_loss=False)
+            dbn.mode = 'greedy'
+            q_samples_T_greedy, _, p_samples_T_greedy, _, _ = \
+                dbn(data_sample,
+                    S=args.nS,
+                    k=args.ncs,
+                    T=args.timesteps,
+                    compute_loss=False)
+
+            if args.perplexity:
+                metric_fn = evaluate_perplexity
+            elif args.likelihood:
+                metric_fn = evaluate_nll
+            else:
+                metric_fn = evaluate_elbo
+            if not args.perplexity:
+                for t in range(args.timesteps):
+                    p_samples_T_greedy[t][-1] = data_sample.expand(args.nS, *data.size())
+                    p_samples_T_vanilla[t][-1] = data_sample.expand(args.nS, *data.size())
+                    p_samples_T_random[t][-1] = data_sample.expand(args.nS, *data.size())
+
+            dbn.mode = 'vanilla'
+            vanilla_metrics.append(metric_fn(dbn,
+                                             q_samples_T_vanilla,
+                                             p_samples_T_vanilla))
+            random_metrics.append(metric_fn(dbn,
+                                            q_samples_T_random,
+                                            p_samples_T_random))
+            greedy_metrics.append(metric_fn(dbn,
+                                            q_samples_T_greedy,
+                                            p_samples_T_greedy))
+
+        all_metrics = {'vanilla': vanilla_metrics, 'greedy': greedy_metrics, 'random': random_metrics}
         with open(args.model_folder +
-                  date_str + '.' + original_mode +
+                  args.mode +
                   '.' + str(dbn.ncs) + '.' + str(dbn.T) +
                   '.' + str(start_epoch) + '.' + (inner_fix) + '.pickle', 'wb') as f:
-            pickle.dump(all_elbos, f)
+            pickle.dump(all_metrics, f)
