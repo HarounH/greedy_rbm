@@ -177,87 +177,96 @@ class DBN(nn.Module):
 '''
 
 def evaluate_elbo(dbn, q_samples_T, p_samples_T):
-    T = len(q_samples_T)
+    T = len(q_samples_T[0])
     S, bs, _ = q_samples_T[0][0].size()
     nx = dbn.nx
     nz = dbn.nz
     elbos = []
-    for t in range(T):
-        q_sample = q_samples_T[t]  # x, z
-        p_sample = p_samples_T[t]  # z, x
-        pz_sampler = Bernoulli(smooth_distribution(F.sigmoid(dbn.bq)).expand(S, bs, nz))
-        px_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(p_sample[0], dbn.W, dbn.bp))))
-        qz_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(q_sample[0], dbn.V.t(), dbn.bq))))
 
-        logq = qz_sampler.log_prob(q_sample[1]).sum(dim=2)
-        logpz = pz_sampler.log_prob(p_sample[0]).sum(dim=2)
-        logpx = px_sampler.log_prob(p_sample[1]).sum(dim=2)
+    for t in range(T):
+        # q_sample = q_samples_T[t]  # x, z
+        # p_sample = p_samples_T[t]  # z, x
+        pz_sampler = Bernoulli(smooth_distribution(F.sigmoid(dbn.bq)).expand(S, bs, nz))
+        px_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(p_samples_T[0][t], dbn.W, dbn.bp))))
+        qz_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(q_sample_T[0][t], dbn.V.t(), dbn.bq))))
+
+        logq = qz_sampler.log_prob(q_samples_T[1][t]).sum(dim=2)
+        logpz = pz_sampler.log_prob(p_samples_T[0][t]).sum(dim=2)
+        logpx = px_sampler.log_prob(p_samples_T[1][t]).sum(dim=2)
         logp = logpx + logpx
         elbos.append(compute_elbo_sampled_batched(logp, logq))
-    return torch.stack(elbos).median()
+    return torch.stack(elbos).mean()
 
 
 
 def evaluate_nll(dbn, q_samples_T, p_samples_T):
-    T = len(q_samples_T)
+    T = len(q_samples_T[0])
     S, bs, _ = q_samples_T[0][0].size()
     nx = dbn.nx
     nz = dbn.nz
     nlls = []
     for t in range(T):
-        q_sample = q_samples_T[t]  # x, z
-        p_sample = p_samples_T[t]  # z, x
+        # q_sample = q_samples_T[t]  # x, z
+        # p_sample = p_samples_T[t]  # z, x
         pz_sampler = Bernoulli(smooth_distribution(F.sigmoid(dbn.bq)).expand(S, bs, nz))
-        px_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(p_sample[0], dbn.W, dbn.bp))))
-        qz_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(q_sample[0], dbn.V.t(), dbn.bq))))
-
-        logq = qz_sampler.log_prob(q_sample[1]).sum(dim=2)
-        logpz = pz_sampler.log_prob(p_sample[0]).sum(dim=2)
-        logpx = px_sampler.log_prob(p_sample[1]).sum(dim=2)
-        logp = logpx + logpx
+        px_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(p_samples_T[0][t], dbn.W, dbn.bp))))
+        qz_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(q_samples_T[0][t], dbn.V.t(), dbn.bq))))
+        # pdb.set_trace()
+        logq = qz_sampler.log_prob(q_samples_T[1][t]).sum(dim=2)
+        logpz = pz_sampler.log_prob(p_samples_T[0][t]).sum(dim=2)
+        logpx = px_sampler.log_prob(p_samples_T[1][t]).sum(dim=2)
+        logp = logpx
 
         # log(\Sigma_S p(x, z)) - log(\Sigma_S p(z))
         logp_max = logp.max(dim=0)[0]
         logp_max_expanded = logp_max.expand(*logp.size())
         term1 = logp_max +\
             torch.log((logp - logp_max_expanded).exp().sum(dim=0))
-        logpz_max = logpz.max(dim=0)[0]
-        log_pz_max_expanded = logpz_max.expand(*logpz.size())
-        term2 = logpz_max +\
-            torch.log((logpz - log_pz_max_expanded).exp().sum(dim=0))
-        nlls.append(- term1 + term2)
+        # logpz_max = logpz.max(dim=0)[0]
+        # log_pz_max_expanded = logpz_max.expand(*logpz.size())
+        # term2 = logpz_max +\
+        #     torch.log((logpz - log_pz_max_expanded).exp().sum(dim=0))
+        nlls.append((- term1).mean())
+    # pdb.set_trace()
     return torch.stack(nlls).median()
 
 
 def evaluate_perplexity(dbn, q_samples_T, p_samples_T):
-    T = len(q_samples_T)
+    T = len(q_samples_T[0])
     S, bs, _ = q_samples_T[0][0].size()
     nx = dbn.nx
     nz = dbn.nz
     perps = []
+    # all_perps = []
     for t in range(T):
-        q_sample = q_samples_T[t]  # x, z
-        p_sample = p_samples_T[t]  # z, x
+        # q_sample = q_samples_T[t]  # x, z
+        # p_sample = p_samples_T[t]  # z, x
         pz_sampler = Bernoulli(smooth_distribution(F.sigmoid(dbn.bq)).expand(S, bs, nz))
-        px_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(p_sample[0], dbn.W, dbn.bp))))
-        qz_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(q_sample[0], dbn.V.t(), dbn.bq))))
-        Li = q_sample[0].sum(dim=1)
-        logq = qz_sampler.log_prob(q_sample[1]).sum(dim=2)
-        logpz = pz_sampler.log_prob(p_sample[0]).sum(dim=2)
+        px_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(p_samples_T[0][t], dbn.W, dbn.bp))))
+        qz_sampler = Bernoulli(smooth_distribution(F.sigmoid(F.linear(q_samples_T[0][t], dbn.V.t(), dbn.bq))))
+        # pdb.set_trace()
+        Li = q_samples_T[0][t].sum(dim=2).mean(dim=0)
+        logq = qz_sampler.log_prob(q_samples_T[1][t]).sum(dim=2)
+        logpz = pz_sampler.log_prob(p_samples_T[0][t]).sum(dim=2)
         # IMPORTANT NOTE difference in logpx definition
-        logpx = torch.log(px_sampler.probs.pow(p_sample[1])).sum(dim=2)
-        logp = logpx + logpx
+        logpx = torch.log(px_sampler.probs.pow(p_samples_T[1][t])).sum(dim=2)
+        logp = logpx
         logp_max = logp.max(dim=0)[0]
         logp_max_expanded = logp_max.expand(*logp.size())
         term1 = logp_max +\
             torch.log((logp - logp_max_expanded).exp().sum(dim=0))
-        logpz_max = logpz.max(dim=0)[0]
-        log_pz_max_expanded = logpz_max.expand(*logpz.size())
-        term2 = logpz_max +\
-            torch.log((logpz - log_pz_max_expanded).exp().sum(dim=0))
-        logp_x_no_z = (term1 - term2) / Li
-        perps.append(-logp_x_no_z)
-    return perps
+        # logpz_max = logpz.max(dim=0)[0]
+        # log_pz_max_expanded = logpz_max.expand(*logpz.size())
+        # term2 = logpz_max +\
+        #     torch.log((logpz - log_pz_max_expanded).exp().sum(dim=0))
+        logp_x_no_z = (term1) / Li
+        # all_perps.append(-logp_x_no_z)
+        perps.append(-logp_x_no_z.mean())
+    # all_perps = torch.stack(all_perps)
+    # pdb.set_trace()
+
+    return torch.stack(perps).median()
+
 
 if __name__ == '__main__':
     dbn = DBN(784, 200)

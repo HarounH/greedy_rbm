@@ -31,22 +31,23 @@ from dbn2 import DBN
 torch.manual_seed(1337)
 
 
-latex_output_file = 'medians_latex_output_file.tex'
+latex_output_file = 'latex_output_file.tex'
+
 
 def avg(ls):
     return sum(ls) / len(ls)
 
 
-base_dirs = ['eval_models/models/']
+base_dirs = ['eval_models/models_median/']
 datasets = ['mnist', 'caltech', 'nips_data']
-# datasets = ['caltech']
+# datasets = ['caltech', 'nips_data']
 fileextension_dict = {'mnist':'lkl.pickle', 'nips_data':'perp.pickle', 'caltech':'lkl.pickle'}
 modes = ['vanilla', 'greedy', 'random']
 date_folders = ['jan30']
 ks = ['5', '10', '20']
 Ts = ['3']
 epochs = ['49']
-datestrs = ['1.28.2018']
+datestrs = ['']#,'1.28.2018']
 results = {}
 for dataset in datasets:
     results[dataset] = {}
@@ -61,7 +62,7 @@ for dataset in datasets:
                         result[mode][k][T] = {}
                         for epoch in epochs:
                             result[mode][k][T][epoch] = {}
-                            filename = '.'.join([datestr, mode, k, T, epoch, fileextension_dict[dataset]])
+                            filename = '.'.join([mode, k, T, epoch, fileextension_dict[dataset]])
                             filepath = os.path.join(base_dirs[0], dataset, mode, date_folder, filename)
                             with open(filepath, 'rb') as f:
                                 losses = pickle.load(f)

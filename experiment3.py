@@ -220,6 +220,7 @@ if __name__ == '__main__':
     param_groups = [{'params': dbn.q_parameters, 'lr': 0.6e-4},
                     {'params': dbn.p_parameters, 'lr': 3e-4}]
     optimizer = optim.Adam(param_groups)
+    print('Initialization done. Resume/Train/Test next')
     if args.resume:
         # Load model etc
         checkpoint = load_checkpoint(os.path.join(args.model_folder, args.checkpoint_file))
@@ -309,9 +310,10 @@ if __name__ == '__main__':
                 metric_fn = evaluate_elbo
             if not args.perplexity:
                 for t in range(args.timesteps):
-                    p_samples_T_greedy[t][-1] = data_sample.expand(args.nS, *data.size())
-                    p_samples_T_vanilla[t][-1] = data_sample.expand(args.nS, *data.size())
-                    p_samples_T_random[t][-1] = data_sample.expand(args.nS, *data.size())
+                    # pdb.set_trace()
+                    p_samples_T_greedy[-1][t] = data_sample.expand(args.nS, *data.size())
+                    p_samples_T_vanilla[-1][t] = data_sample.expand(args.nS, *data.size())
+                    p_samples_T_random[-1][t] = data_sample.expand(args.nS, *data.size())
 
             dbn.mode = 'vanilla'
             vanilla_metrics.append(metric_fn(dbn,
@@ -323,10 +325,10 @@ if __name__ == '__main__':
             greedy_metrics.append(metric_fn(dbn,
                                             q_samples_T_greedy,
                                             p_samples_T_greedy))
-
+            # pdb.set_trace()
         all_metrics = {'vanilla': vanilla_metrics, 'greedy': greedy_metrics, 'random': random_metrics}
         with open(args.model_folder +
                   args.mode +
                   '.' + str(dbn.k) + '.' + str(dbn.T) +
-                  '.' + str(start_epoch) + '.' + (inner_fix) + '.pickle', 'wb') as f:
+                  '.' + str(start_epoch) + '.' + (inner_fix) + '.median.pickle', 'wb') as f:
             pickle.dump(all_metrics, f)
